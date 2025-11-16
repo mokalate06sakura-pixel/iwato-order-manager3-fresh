@@ -443,31 +443,55 @@ with col_right:
     st.markdown(
         """
 <div class="feature-card">
-  <div class="feature-title">② 注文書を作成する</div>
+  <div class="feature-title">② 注文書を作成</div>
   <div class="feature-sub">
-      特養（いわと）・ユーハウスを選択できます。<br>
-      1つのファイルからどちらの注文書も自動生成！
+    特養（介護老人福祉施設いわと）か<br>
+    ユーハウスいわと を選んで、<br>
+    仕入先ごとシート分割の注文書を作成します。
   </div>
   <hr class="soft"/>
 </div>
-""",
+        """,
         unsafe_allow_html=True,
     )
 
-    # 🟢 選択式
+    # 種別選択（ラジオボタン）
     order_type = st.radio(
-        "作成する注文書を選んでください",
-        ["特養（いわと）", "ユーハウス"],
+        "作成する注文書の種類を選んでください",
+        ("特養（介護老人福祉施設いわと）", "ユーハウスいわと"),
         horizontal=True,
-        key="ordertype"
+        key="order_type",
     )
 
+    # ファイルアップロード（共通）
     order_file = st.file_uploader(
-        "検収簿（整形済み Excel）をアップロード", type=["xlsx"], key="orderfile"
+        "注文書のもとになる検収簿 Excel をアップロード",
+        type=["xlsx"],
+        key="order_src",
     )
 
-    if order_file and st.button("📗 注文書を作成する", key="btn_order"):
-        data, fname = create_order_workbook(order_file, order_type)
-        st.success(f"{order_type} の注文書を作成しました！")
-        st.download_button("📥 ダウンロード（注文書）", data, fname)
+    st.markdown(
+        '<p class="small-note">※ inspection_formatter / 検収簿整形で加工したもの、<br>　または同じ形式の検収簿ファイルを想定しています。</p>',
+        unsafe_allow_html=True,
+    )
+
+    if order_file is not None:
+        if st.button("📗 注文書ファイルを作成", key="btn_order"):
+            try:
+                if "特養" in order_type:
+                    data, fname = create_iwato_order_workbook(order_file)
+                else:
+                    data, fname = create_yuhouse_order_workbook(order_file)
+
+                st.success(f"{order_type} の注文書ファイルを作成しました。")
+                st.download_button(
+                    "📥 注文書ファイルをダウンロード",
+                    data=data,
+                    file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception as e:
+                st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
+                st.exception(e)
+
 
