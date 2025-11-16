@@ -149,10 +149,10 @@ def format_inspection_workbook(uploaded_file):
     sort_cols = [c for c in ["使用日", "食事順", "食品名"] if c in df.columns]
     df = df.sort_values(sort_cols)
 
-    # ---- A〜H列（必要列だけ） ----
+    # ---- A〜K列（必要列だけ） ----
     extract_cols = [
         "納品日", "使用日", "朝昼夕", "仕入先",
-        "食品名", "換算値", "総合計", "単位"
+        "食品名", "換算値", "総合計", "単位","介護老人福祉施設いわと_入所者","介護老人福祉施設いわと_職員","ケアハウスユー…_入所者",
     ]
     extract_cols = [c for c in extract_cols if c in df.columns]
     df_out = df[extract_cols]
@@ -429,3 +429,5 @@ with col_right:
         data, fname = create_order_workbook(order_file, order_type)
         st.success(f"{order_type} の注文書を作成しました！")
         st.download_button("📥 ダウンロード（注文書）", data, fname)
+
+
