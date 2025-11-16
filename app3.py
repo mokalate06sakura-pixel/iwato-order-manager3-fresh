@@ -478,10 +478,8 @@ with col_right:
     if order_file is not None:
         if st.button("📗 注文書ファイルを作成", key="btn_order"):
             try:
-                if "特養" in order_type:
-                    data, fname = create_iwato_order_workbook(order_file)
-                else:
-                    data, fname = create_yuhouse_order_workbook(order_file)
+                data, fname = create_order_workbook(order_file, order_type)
+
 
                 st.success(f"{order_type} の注文書ファイルを作成しました。")
                 st.download_button(
@@ -493,5 +491,6 @@ with col_right:
             except Exception as e:
                 st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
                 st.exception(e)
+
 
 
