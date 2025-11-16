@@ -475,22 +475,24 @@ with col_right:
         unsafe_allow_html=True,
     )
 
-    if order_file is not None:
-        if st.button("📗 注文書ファイルを作成", key="btn_order"):
-            try:
-                data, fname = create_order_workbook(order_file, order_type)
+if order_file is not None:
+    if st.button("📗 注文書ファイルを作成", key="btn_order"):
+        try:
+            # ▼ 統合版 create_order_workbook を呼び出す
+            data, fname = create_order_workbook(order_file, order_type)
+
+            st.success(f"{order_type} の注文書ファイルを作成しました。")
+            st.download_button(
+                "📥 注文書ファイルをダウンロード",
+                data=data,
+                file_name=fname,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except Exception as e:
+            st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
+            st.exception(e)
 
 
-                st.success(f"{order_type} の注文書ファイルを作成しました。")
-                st.download_button(
-                    "📥 注文書ファイルをダウンロード",
-                    data=data,
-                    file_name=fname,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            except Exception as e:
-                st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
-                st.exception(e)
 
 
 
