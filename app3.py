@@ -116,7 +116,6 @@ def detect_min_usage_date_token(df, col="使用日"):
 # ① 検収簿整形ロジック（ログ付き）
 # ------------------------------------------------------------
 def format_inspection_workbook(uploaded_file):
-    # MultiIndex 読み込み
     df = pd.read_excel(uploaded_file, header=[6, 7])
 
     # ---- MultiIndex → フラット化 ----
@@ -124,7 +123,6 @@ def format_inspection_workbook(uploaded_file):
     for top, sub in df.columns:
         top = "" if str(top).startswith("Unnamed") else str(top)
         sub = "" if str(sub).startswith("Unnamed") else str(sub)
-
         if top == "":
             flat_cols.append(sub)
         elif sub == "":
@@ -134,7 +132,7 @@ def format_inspection_workbook(uploaded_file):
 
     df.columns = flat_cols
 
-    # Unnamed: n_level_0_ の削除
+    # Unnamed cleanup
     for i in range(6):
         df.columns = [c.replace(f"Unnamed: {i}_level_0_", "") for c in df.columns]
 
@@ -143,17 +141,16 @@ def format_inspection_workbook(uploaded_file):
         if col in df.columns:
             df[col] = df[col].ffill()
 
-    # ---- 朝昼夕ソート ----
+    # ---- 朝昼夕の順番 ----
     order_map = {"朝食": 1, "昼食": 2, "夕食": 3}
     df["食事順"] = df["朝昼夕"].map(order_map).fillna(0)
 
     # ---- 並び替え ----
-    sort_cols = ["使用日", "食事順", "食品名"]
-    sort_cols = [c for c in sort_cols if c in df.columns]
+    sort_cols = [c for c in ["使用日", "食事順", "食品名"] if c in df.columns]
     df = df.sort_values(sort_cols)
 
-    # ---- A〜K列を残す（人数列まで）----
-    keep_cols = [
+    # ---- A〜K列に相当する列を残す ----
+    base_cols = [
         "納品日",
         "使用日",
         "朝昼夕",
@@ -162,25 +159,24 @@ def format_inspection_workbook(uploaded_file):
         "換算値",
         "総合計",
         "単位",
-        # 人数列（MultiIndex 元ファイルのまま）
-        col for col in df.columns if "入所者" in col or "職員" in col
     ]
 
-    # 人数列の抽出をキレイにする
-    base_cols = ["納品日", "使用日", "朝昼夕", "仕入先", "食品名", "換算値", "総合計", "単位"]
+    # 人数列（"入所者" または "職員" を含む列）
     num_cols = [c for c in df.columns if ("入所者" in c or "職員" in c)]
+
+    # 結合
     keep_cols = base_cols + num_cols
 
-    # 実際に残すデータ
+    # 実際の出力
     df_out = df[keep_cols]
 
-    # ---- Excel 出力 ----
+    # ---- Excel へ ----
     buffer = io.BytesIO()
     df_out.to_excel(buffer, index=False)
     buffer.seek(0)
 
-    out_name = "検収記録簿_加工済.xlsx"
-    return buffer.read(), out_name
+    return buffer.read(), "検収記録簿_加工済.xlsx"
+
 
 
 # ------------------------------------------------------------
@@ -468,6 +464,7 @@ if order_file is not None:
         except Exception as e:
             st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
             st.exception(e)
+
 
 
 
