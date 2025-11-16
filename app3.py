@@ -115,9 +115,10 @@ def detect_min_usage_date_token(df, col="使用日"):
 # ------------------------------------------------------------
 # ① 検収簿整形ロジック（ログ付き）
 # ------------------------------------------------------------
+# ------------------------------------------------------------
+# ① 検収簿整形ロジック（修正版：不要列を削除）
+# ------------------------------------------------------------
 def format_inspection_workbook(uploaded_file):
-
-    # 7・8行目で MultiIndex 読み込み
     df = pd.read_excel(uploaded_file, header=[6, 7])
 
     # ---- MultiIndex → フラット化 ----
@@ -135,25 +136,20 @@ def format_inspection_workbook(uploaded_file):
 
     df.columns = flat_cols
 
-    # ---- 欠損補完 ----
+    # 欠損補完
     for col in ["納品日", "使用日", "朝昼夕", "仕入先"]:
         if col in df.columns:
             df[col] = df[col].ffill()
 
-    print("✔ 欠損補完完了")
-
-    # ---- 朝昼夕 → 並び替え数字 ----
+    # 朝昼夕の並び順
     order_map = {"朝食": 1, "昼食": 2, "夕食": 3}
-    df["食事順"] = df["朝昼夕"].map(order_map)
+    df["食事順"] = df["朝昼夕"].map(order_map).fillna(0)
 
-    print("✔ 朝昼夕 並び順マッピング完了")
-
-    # ---- 並び替え ----
+    # 並べ替え
     df = df.sort_values(["使用日", "食事順", "食品名"])
-    print("✔ 並び替え完了")
 
-    # ---- A〜K列（必要列＋人数列3つ） ----
-    extract_cols = [
+    # ---- 必要列だけ残す（ここが重要！） ----
+    needed_cols = [
         "納品日",
         "使用日",
         "朝昼夕",
@@ -164,22 +160,23 @@ def format_inspection_workbook(uploaded_file):
         "単位",
         "介護老人福祉施設いわと_入所者",
         "介護老人福祉施設いわと_職員",
-        "ケアハウスユーハウス_入所者",
+        "ケアハウスユーハウス_入所者"   # ← L列だけ残す
     ]
 
-    extract_cols = [c for c in extract_cols if c in df.columns]
+    # 存在する列だけ残す
+    needed_cols = [c for c in needed_cols if c in df.columns]
 
-    df_out = df[extract_cols]
-    print("✔ 列抽出完了（A〜K列）")
+    df_out = df[needed_cols]
 
-    # ---- Excel 出力 ----
+    # Excel 出力
     buffer = io.BytesIO()
     df_out.to_excel(buffer, index=False)
     buffer.seek(0)
 
-    print("🎉 完了：検収簿_加工済.xlsx を生成しました")
+    # ファイル名
+    out_name = "検収簿_加工済.xlsx"
+    return buffer.read(), out_name
 
-    return buffer.read(), "検収簿_加工済.xlsx"
 
 
 
@@ -372,16 +369,19 @@ def create_order_workbook(uploaded_file, order_type):
 # ------------------------------------------------------------
 st.markdown(
     """
-<div>
-  <span class="app-title">発注・検収サポートシステム</span><br/>
+<div style="margin-bottom: 1.5rem;">
+  <span class="app-title">発注・検収サポートシステム</span>
+</div>
+
+<div style="margin-bottom: 2.0rem;">
   <span class="subtitle-pill sub-orange">毎日の業務をかんたんに</span>
   <span class="subtitle-pill sub-green">発注書を自動作成</span>
   <span class="subtitle-pill sub-blue">検収簿を整形</span>
 </div>
-<br/>
 """,
     unsafe_allow_html=True,
 )
+
 
 col_left, col_right = st.columns([1, 1])
 
@@ -408,10 +408,20 @@ with col_left:
 
     ins_file = st.file_uploader("検収簿（原本 Excel）をアップロード", type=["xlsx"], key="ins")
 
-    if ins_file and st.button("📘 検収簿を整形する", key="btn_ins"):
-        data, fname = format_inspection_workbook(ins_file)
+if ins_file:
+    if st.button("📘 検収簿を整形する", key="btn_ins"):
+        st.session_state["ins_data"], st.session_state["ins_fname"] = \
+            format_inspection_workbook(ins_file)
         st.success("検収簿の整形が完了しました！")
-        st.download_button("📥 ダウンロード（検収簿 加工済）", data, fname)
+
+    # 整形が完了したらダウンロードボタンを出す
+    if "ins_data" in st.session_state:
+        st.download_button(
+            "📥 検収簿（加工済）をダウンロード",
+            st.session_state["ins_data"],
+            st.session_state["ins_fname"]
+        )
+
 
 
 # ------------------------------------------------------------
@@ -423,9 +433,9 @@ with col_right:
 <div class="feature-card">
   <div class="feature-title">② 注文書を作成</div>
   <div class="feature-sub">
-    特養（介護老人福祉施設いわと）か<br>
-    ユーハウスいわと を選んで、<br>
-    仕入先ごとシート分割の注文書を作成します。
+    特養（介護老人福祉施設いわと）<br>
+    かユーハウスいわと を選んで、<br>
+    仕入先別にシート作成された注文書を作成します。
   </div>
   <hr class="soft"/>
 </div>
@@ -453,30 +463,21 @@ with col_right:
         unsafe_allow_html=True,
     )
 
-    if order_file is not None:
-        if st.button("📗 注文書ファイルを作成", key="btn_order"):
-            try:
-                if "特養" in order_type:
-                    data, fname = create_iwato_order_workbook(order_file)
-                else:
-                    data, fname = create_yuhouse_order_workbook(order_file)
+if order_file:
+    try:
+        if st.button("📗 注文書を作成する", key="btn_order"):
+            st.session_state["order_data"], st.session_state["order_fname"] = \
+                create_order_workbook(order_file, order_type)
+            st.success(f"{order_type} の注文書が作成されました！")
 
-                st.success(f"{order_type} の注文書ファイルを作成しました。")
-                st.download_button(
-                    "📥 注文書ファイルをダウンロード",
-                    data=data,
-                    file_name=fname,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+        if "order_data" in st.session_state:
+            st.download_button(
+                "📥 注文書ファイルをダウンロード",
+                st.session_state["order_data"],
+                st.session_state["order_fname"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
-            except Exception as e:
-                st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
-                st.exception(e)
-
-            
-
-
-
-
-
-
+    except Exception as e:
+        st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
+        st.exception(e)
