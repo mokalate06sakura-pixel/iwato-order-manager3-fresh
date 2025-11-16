@@ -116,6 +116,8 @@ def detect_min_usage_date_token(df, col="使用日"):
 # ① 検収簿整形ロジック（ログ付き）
 # ------------------------------------------------------------
 def format_inspection_workbook(uploaded_file):
+
+    # 7・8行目で MultiIndex 読み込み
     df = pd.read_excel(uploaded_file, header=[6, 7])
 
     # ---- MultiIndex → フラット化 ----
@@ -123,6 +125,7 @@ def format_inspection_workbook(uploaded_file):
     for top, sub in df.columns:
         top = "" if str(top).startswith("Unnamed") else str(top)
         sub = "" if str(sub).startswith("Unnamed") else str(sub)
+
         if top == "":
             flat_cols.append(sub)
         elif sub == "":
@@ -132,25 +135,25 @@ def format_inspection_workbook(uploaded_file):
 
     df.columns = flat_cols
 
-    # Unnamed cleanup
-    for i in range(6):
-        df.columns = [c.replace(f"Unnamed: {i}_level_0_", "") for c in df.columns]
-
     # ---- 欠損補完 ----
     for col in ["納品日", "使用日", "朝昼夕", "仕入先"]:
         if col in df.columns:
             df[col] = df[col].ffill()
 
-    # ---- 朝昼夕の順番 ----
+    print("✔ 欠損補完完了")
+
+    # ---- 朝昼夕 → 並び替え数字 ----
     order_map = {"朝食": 1, "昼食": 2, "夕食": 3}
-    df["食事順"] = df["朝昼夕"].map(order_map).fillna(0)
+    df["食事順"] = df["朝昼夕"].map(order_map)
+
+    print("✔ 朝昼夕 並び順マッピング完了")
 
     # ---- 並び替え ----
-    sort_cols = [c for c in ["使用日", "食事順", "食品名"] if c in df.columns]
-    df = df.sort_values(sort_cols)
+    df = df.sort_values(["使用日", "食事順", "食品名"])
+    print("✔ 並び替え完了")
 
-    # ---- A〜K列に相当する列を残す ----
-    base_cols = [
+    # ---- A〜K列（必要列＋人数列3つ） ----
+    extract_cols = [
         "納品日",
         "使用日",
         "朝昼夕",
@@ -159,23 +162,25 @@ def format_inspection_workbook(uploaded_file):
         "換算値",
         "総合計",
         "単位",
+        "介護老人福祉施設いわと_入所者",
+        "介護老人福祉施設いわと_職員",
+        "ケアハウスユーハウス_入所者",
     ]
 
-    # 人数列（"入所者" または "職員" を含む列）
-    num_cols = [c for c in df.columns if ("入所者" in c or "職員" in c)]
+    extract_cols = [c for c in extract_cols if c in df.columns]
 
-    # 結合
-    keep_cols = base_cols + num_cols
+    df_out = df[extract_cols]
+    print("✔ 列抽出完了（A〜K列）")
 
-    # 実際の出力
-    df_out = df[keep_cols]
-
-    # ---- Excel へ ----
+    # ---- Excel 出力 ----
     buffer = io.BytesIO()
     df_out.to_excel(buffer, index=False)
     buffer.seek(0)
 
-    return buffer.read(), "検収記録簿_加工済.xlsx"
+    print("🎉 完了：検収簿_加工済.xlsx を生成しました")
+
+    return buffer.read(), "検収簿_加工済.xlsx"
+
 
 
 
@@ -448,23 +453,27 @@ with col_right:
         unsafe_allow_html=True,
     )
 
-if order_file is not None:
-    if st.button("📗 注文書ファイルを作成", key="btn_order"):
-        try:
-            # ▼ 統合版 create_order_workbook を呼び出す
-            data, fname = create_order_workbook(order_file, order_type)
+    if order_file is not None:
+        if st.button("📗 注文書ファイルを作成", key="btn_order"):
+            try:
+                if "特養" in order_type:
+                    data, fname = create_iwato_order_workbook(order_file)
+                else:
+                    data, fname = create_yuhouse_order_workbook(order_file)
 
-            st.success(f"{order_type} の注文書ファイルを作成しました。")
-            st.download_button(
-                "📥 注文書ファイルをダウンロード",
-                data=data,
-                file_name=fname,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        except Exception as e:
-            st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
-            st.exception(e)
+                st.success(f"{order_type} の注文書ファイルを作成しました。")
+                st.download_button(
+                    "📥 注文書ファイルをダウンロード",
+                    data=data,
+                    file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
 
+            except Exception as e:
+                st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
+                st.exception(e)
+
+            
 
 
 
