@@ -372,7 +372,7 @@ st.markdown(
 <div style="margin-bottom: 1.5rem;">
   <span class="app-title">発注・検収サポートシステム</span>
 </div>
-
+</div>
 <div style="margin-bottom: 2.0rem;">
   <span class="subtitle-pill sub-orange">毎日の業務をかんたんに</span>
   <span class="subtitle-pill sub-green">発注書を自動作成</span>
@@ -481,3 +481,4 @@ if order_file:
     except Exception as e:
         st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
         st.exception(e)
+
