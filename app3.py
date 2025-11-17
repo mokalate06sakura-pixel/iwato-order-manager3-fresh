@@ -196,6 +196,156 @@ def format_inspection_workbook(uploaded_file):
     return buffer.read(), fname
 
 # ------------------------------------------------------------
+# 注文書のスタイル（共通）
+# ------------------------------------------------------------
+def apply_order_style(ws):
+    font_body = Font(name="ＭＳ ゴシック", size=18)
+    border = Border(
+        left=Side("thin"), right=Side("thin"),
+        top=Side("thin"), bottom=Side("thin")
+    )
+
+    # ヘッダー
+    for cell in ws[6]:
+        cell.font = Font(name="ＭＳ ゴシック", size=18, bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    # データ行
+    for row in ws.iter_rows(min_row=7):
+        for c in row:
+            c.font = font_body
+            c.alignment = Alignment(vertical="center")
+            c.border = border
+
+    # 列幅
+    ws.column_dimensions["A"].width = 15.18
+    ws.column_dimensions["B"].width = 15.18
+    ws.column_dimensions["C"].width = 15.18
+    ws.column_dimensions["D"].width = 60
+    ws.column_dimensions["E"].width = 20
+    ws.column_dimensions["F"].width = 20
+    ws.column_dimensions["G"].width = 12
+    ws.column_dimensions["H"].width = 12
+    ws.column_dimensions["I"].width = 15
+    ws.column_dimensions["J"].width = 15
+    ws.column_dimensions["L"].width = 15
+
+    # 印刷設定
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+
+
+# ------------------------------------------------------------
+# ヘッダー（いわと）
+# ------------------------------------------------------------
+def create_header_iwato(ws, supplier):
+    ws.merge_cells("A3:B3")
+    ws["A3"] = f"{supplier} 御中"
+    ws["A3"].font = Font(name="ＭＳ ゴシック", size=28, bold=True)
+
+    ws["B1"] = "注文書（介護老人福祉施設いわと）"
+    ws["B1"].alignment = Alignment(horizontal="center")
+    ws["B1"].font = Font(name="ＭＳ ゴシック", size=26, bold=True)
+
+    ws["K3"] = "(有) ハートミール"
+    ws["K3"].alignment = Alignment(horizontal="right")
+    ws["K3"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
+
+
+
+# ------------------------------------------------------------
+# ヘッダー（ユーハウス）
+# ------------------------------------------------------------
+def create_header_yuhouse(ws, supplier):
+    ws.merge_cells("A3:B3")
+    ws["A3"] = f"{supplier} 御中"
+    ws["A3"].font = Font(name="ＭＳ ゴシック", size=28, bold=True)
+
+    ws["B1"] = "注文書（ユーハウスいわと）"
+    ws["B1"].alignment = Alignment(horizontal="center")
+    ws["B1"].font = Font(name="ＭＳ ゴシック", size=26, bold=True)
+
+    ws["K3"] = "(有) ハートミール"
+    ws["K3"].alignment = Alignment(horizontal="right")
+    ws["K3"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
+
+
+
+# ------------------------------------------------------------
+# ③ 注文書作成（特養 / ユーハウス 共通）
+# ------------------------------------------------------------
+def create_order_workbook(uploaded_file, order_type):
+    df = pd.read_excel(uploaded_file)
+
+    # 欠損補完
+    for c in ["使用日", "仕入先", "食品名"]:
+        if c in df.columns:
+            df[c] = df[c].ffill()
+
+    df["使用日"] = df["使用日"].astype(str)
+
+    # 数値列設定
+    if "特養" in order_type:
+        qty_col = "介護老人福祉施設いわと_入所者"
+        staff_col = "介護老人福祉施設いわと_職員"
+        df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0)
+        df[staff_col] = pd.to_numeric(df[staff_col], errors="coerce").fillna(0)
+        keep_extra = [qty_col, staff_col]
+
+    else:
+        qty_col = "ケアハウスユーハウス_入所者"
+        df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0)
+        keep_extra = [qty_col]
+
+    # 出力列
+    base_cols = [
+        "使用日", "食品名", "単位",
+        "鮮度", "品温", "異物", "包装", "期限",
+        "備考欄", "納品日", "検収者"
+    ]
+
+    keep_cols = base_cols + keep_extra
+
+    # 仕入先ごとに作成
+    suppliers = df["仕入先"].dropna().unique()
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+
+        for supplier in suppliers:
+            sub = df[df["仕入先"] == supplier].copy()
+
+            # 日付ソート
+            sub["使用日_dt"] = sub["使用日"].apply(parse_mmdd)
+            sub = sub.sort_values(["使用日_dt", "食品名"])
+
+            sub = sub[keep_cols]
+            sub["使用日"] = sub["使用日"].mask(sub["使用日"].duplicated(), "")
+
+            sheet = str(supplier)[:30]
+            sub.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
+
+        wb = writer.book
+        for supplier in suppliers:
+            ws = wb[str(supplier)[:30]]
+            apply_order_style(ws)
+
+            if "特養" in order_type:
+                create_header_iwato(ws, supplier)
+            else:
+                create_header_yuhouse(ws, supplier)
+                ws["C6"] = "入居者"
+
+    token = detect_min_usage_date_token(df, "使用日")
+    fname = f"注文書_{order_type}_{token}.xlsx"
+
+    buffer.seek(0)
+    return buffer.read(), fname
+
+
+
+# ------------------------------------------------------------
 # 🖥️ UI構築（かわいい献ダテマン風）
 # ------------------------------------------------------------
 st.markdown(
@@ -274,7 +424,7 @@ with col_right:
         unsafe_allow_html=True,
     )
 
-    # 種別選択（ラジオボタン）
+    # 種別選択
     order_type = st.radio(
         "作成する注文書の種類を選んでください",
         ("特養（介護老人福祉施設いわと）", "ユーハウスいわと"),
@@ -282,7 +432,7 @@ with col_right:
         key="order_type",
     )
 
-    # ファイルアップロード（共通）
+    # ファイルアップロード
     order_file = st.file_uploader(
         "注文書のもとになる検収簿 Excel をアップロード",
         type=["xlsx"],
@@ -290,28 +440,30 @@ with col_right:
     )
 
     st.markdown(
-        '<p class="small-note">※ inspection_formatter / 検収簿整形で加工したもの、<br>　または同じ形式の検収簿ファイルを想定しています。</p>',
+        '<p class="small-note">※ 検収簿整形で加工したもの、または同じ形式の検収簿ファイルを想定しています。</p>',
         unsafe_allow_html=True,
     )
 
-if order_file:
-    try:
-        if st.button("📗 注文書を作成する", key="btn_order"):
-            st.session_state["order_data"], st.session_state["order_fname"] = \
-                create_order_workbook(order_file, order_type)
-            st.success(f"{order_type} の注文書が作成されました！")
+    # 🔥 注文書作成ボタン（正しい位置）
+    if order_file:
+        try:
+            if st.button("📗 注文書を作成する", key="btn_order"):
+                st.session_state["order_data"], st.session_state["order_fname"] = \
+                    create_order_workbook(order_file, order_type)
+                st.success(f"{order_type} の注文書が作成されました！")
 
-        if "order_data" in st.session_state:
-            st.download_button(
-                "📥 注文書ファイルをダウンロード",
-                st.session_state["order_data"],
-                st.session_state["order_fname"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+            # 作成後にダウンロードボタンを出す
+            if "order_data" in st.session_state:
+                st.download_button(
+                    "📥 注文書ファイルをダウンロード",
+                    st.session_state["order_data"],
+                    st.session_state["order_fname"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
 
-    except Exception as e:
-        st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
-        st.exception(e)
+        except Exception as e:
+            st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
+            st.exception(e)
 
 
 
