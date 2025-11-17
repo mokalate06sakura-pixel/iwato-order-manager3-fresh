@@ -319,24 +319,50 @@ def create_order_workbook(uploaded_file, order_type):
 
     df["使用日"] = df["使用日"].astype(str)
 
-    # 元データの数量列（検収簿_加工済.xlsx の列を使用）
+    # ------------------------------------------------------------
+    # 🔶 特養（いわと）
+    # ------------------------------------------------------------
     if "特養" in order_type:
         raw_qty = "介護老人福祉施設いわと_入所者"
         raw_staff = "介護老人福祉施設いわと_職員"
-        df[raw_qty] = pd.to_numeric(df.get(raw_qty, 0), errors="coerce").fillna(0)
-        df[raw_staff] = pd.to_numeric(df.get(raw_staff, 0), errors="coerce").fillna(0)
-    else:
-        raw_qty = "ケアハウスユーハウス_入所者"
-        raw_staff = None
-        df[raw_qty] = pd.to_numeric(df.get(raw_qty, 0), errors="coerce").fillna(0)
 
-    # 各評価項目（なければ空列作成）
-    for c in ["鮮度","品温","異物","包装","期限","備考欄","検収者"]:
+        if raw_qty not in df.columns:
+            df[raw_qty] = 0
+        if raw_staff not in df.columns:
+            df[raw_staff] = 0
+
+        df[raw_qty] = pd.to_numeric(df[raw_qty], errors="coerce").fillna(0)
+        df[raw_staff] = pd.to_numeric(df[raw_staff], errors="coerce").fillna(0)
+
+    # ------------------------------------------------------------
+    # 🔷 ユーハウス（ケアハウス）
+    # ------------------------------------------------------------
+    else:
+        # ゆるマッチで入居者列を探す
+        cand_cols = [
+            c for c in df.columns
+            if ("ケアハウス" in c or "ユー" in c or "ユ" in c)
+            and ("入" in c or "居" in c)
+            and ("職" not in c)
+        ]
+
+        if len(cand_cols) == 0:
+            raw_qty = "ケアハウス入居者"
+            df[raw_qty] = 0
+        else:
+            raw_qty = cand_cols[0]  # 例：ケアハウスユー…_入所者
+
+        df[raw_qty] = pd.to_numeric(df.get(raw_qty, 0), errors="coerce").fillna(0)
+        raw_staff = None  # ユーハウスは職員欄なし
+
+    # ------------------------------------------------------------
+    # 評価項目の空列作成
+    # ------------------------------------------------------------
+    for c in ["鮮度", "品温", "異物", "包装", "期限", "備考欄", "検収者"]:
         if c not in df.columns:
             df[c] = ""
 
-    # 📌 納品日は見出しだけ使う。データは空欄にするのでここで空列を作成
-    df["納品日"] = ""
+    df["納品日"] = ""  # 納品日は常に空欄
 
     suppliers = df["仕入先"].dropna().unique()
 
@@ -346,13 +372,11 @@ def create_order_workbook(uploaded_file, order_type):
         for supplier in suppliers:
             sub = df[df["仕入先"] == supplier].copy()
 
-            # 日付ソート
             sub["使用日_dt"] = sub["使用日"].apply(parse_mmdd)
             sub = sub.sort_values(["使用日_dt", "食品名"])
 
-            # 人間に見せる列名へ変換
+            # 表示名に変換
             if "特養" in order_type:
-                # いわと → 入所者 / 職員 に変換
                 sub = sub.rename(columns={
                     raw_qty: "入所者",
                     raw_staff: "職員"
@@ -360,12 +384,11 @@ def create_order_workbook(uploaded_file, order_type):
                 qty_label = "入所者"
                 staff_label = "職員"
             else:
-                # ユーハウス → ユーハウス入居者
                 sub = sub.rename(columns={raw_qty: "ユーハウス入居者"})
                 qty_label = "ユーハウス入居者"
                 staff_label = None
 
-            # 並べる列順（指定通り）
+            # 並べる列順
             col_order = [
                 "使用日",
                 "食品名",
@@ -377,31 +400,24 @@ def create_order_workbook(uploaded_file, order_type):
                 col_order.append(staff_label)
 
             col_order += [
-                "鮮度",
-                "品温",
-                "異物",
-                "包装",
-                "期限",
-                "備考欄",
-                "納品日",   # ← L列ヘッダー
-                "検収者"
+                "鮮度", "品温", "異物", "包装", "期限",
+                "備考欄", "納品日", "検収者"
             ]
 
-            # 不足列は空列で補う
+            # 不足列を補完
             for c in col_order:
                 if c not in sub.columns:
                     sub[c] = ""
 
-            # 表示用に並び替え
             sub = sub[col_order]
 
-            # 同じ使用日の2行目以降は空欄
+            # 同じ使用日は2行目以降空欄に
             sub["使用日"] = sub["使用日"].mask(sub["使用日"].duplicated(), "")
 
             sheet = str(supplier)[:30]
             sub.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
 
-        # スタイルとヘッダー設定
+        # 書式 & ヘッダー
         wb = writer.book
         for supplier in suppliers:
             ws = wb[str(supplier)[:30]]
@@ -413,7 +429,7 @@ def create_order_workbook(uploaded_file, order_type):
                 create_header_yuhouse(ws, supplier)
                 ws["C6"] = "ユーハウス入居者"
 
-        # ファイル名に使用日の最古日を付ける
+    # ファイル名（使用日の最古日）
     token = detect_min_usage_date_token(df, "使用日")
 
     if "特養" in order_type:
@@ -422,7 +438,6 @@ def create_order_workbook(uploaded_file, order_type):
         base_name = "注文書_ユーハウス"
 
     fname = f"{base_name}_{token}.xlsx" if token else f"{base_name}.xlsx"
-
 
     buffer.seek(0)
     return buffer.read(), fname
@@ -548,6 +563,7 @@ with col_right:
         except Exception as e:
             st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
             st.exception(e)
+
 
 
 
