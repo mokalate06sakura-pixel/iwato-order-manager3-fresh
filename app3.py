@@ -112,9 +112,7 @@ def detect_min_usage_date_token(df, col="使用日"):
         return ""
     return min(dt_list).strftime("%m%d")
 
-# ------------------------------------------------------------
-# ① 検収簿整形ロジック（ログ付き）
-# ------------------------------------------------------------
+
 # ------------------------------------------------------------
 # ① 検収簿整形ロジック（修正版：不要列を削除）
 # ------------------------------------------------------------
@@ -136,19 +134,19 @@ def format_inspection_workbook(uploaded_file):
 
     df.columns = flat_cols
 
-    # 欠損補完
+    # ---- 欠損補完 ----
     for col in ["納品日", "使用日", "朝昼夕", "仕入先"]:
         if col in df.columns:
             df[col] = df[col].ffill()
 
-    # 朝昼夕の並び順
+    # ---- 朝昼夕用の並び順 ----
     order_map = {"朝食": 1, "昼食": 2, "夕食": 3}
     df["食事順"] = df["朝昼夕"].map(order_map).fillna(0)
 
-    # 並べ替え
+    # ---- ソート ----
     df = df.sort_values(["使用日", "食事順", "食品名"])
 
-    # ---- 必要列だけ残す（ここが重要！） ----
+    # ★★★ ここをあなたの仕様に合わせて修正 ★★★
     needed_cols = [
         "納品日",
         "使用日",
@@ -158,9 +156,9 @@ def format_inspection_workbook(uploaded_file):
         "換算値",
         "総合計",
         "単位",
-        "介護老人福祉施設いわと_入所者",
-        "介護老人福祉施設いわと_職員",
-        "ケアハウスユーハウス_入所者"   # ← L列だけ残す
+        "介護老人福祉施設いわと_入所者",  # I列
+        "介護老人福祉施設いわと_職員",    # J列
+        "ケアハウスユーハウス_入所者",     # L列
     ]
 
     # 存在する列だけ残す
@@ -168,200 +166,15 @@ def format_inspection_workbook(uploaded_file):
 
     df_out = df[needed_cols]
 
-    # Excel 出力
+    # ---- 出力 ----
     buffer = io.BytesIO()
     df_out.to_excel(buffer, index=False)
     buffer.seek(0)
 
-    # ファイル名
-    out_name = "検収簿_加工済.xlsx"
-    return buffer.read(), out_name
+    token = detect_min_usage_date_token(df_out, "使用日")
+    fname = f"検収簿_加工済_{token}.xlsx" if token else "検収簿_加工済.xlsx"
 
-
-
-
-
-# ------------------------------------------------------------
-# ② 注文書（特養・ユーハウス）の共通処理
-# ------------------------------------------------------------
-def apply_order_style(ws):
-    font_body = Font(name="ＭＳ ゴシック", size=18)
-    border = Border(
-        left=Side("thin"), right=Side("thin"),
-        top=Side("thin"), bottom=Side("thin")
-    )
-
-    header_row = 6
-
-    # ヘッダー部分
-    for cell in ws[header_row]:
-        cell.font = Font(name="ＭＳ ゴシック", size=18, bold=True)
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = border
-
-    # データ部
-    for row in ws.iter_rows(min_row=header_row + 1):
-        for c in row:
-            c.font = font_body
-            c.border = border
-            c.alignment = Alignment(vertical="center")
-
-    # 行高
-    for i in range(1, ws.max_row + 1):
-        ws.row_dimensions[i].height = 30
-
-    # 列幅
-    ws.column_dimensions["A"].width = 15.18
-    ws.column_dimensions["B"].width = 60.09
-    for col in ["D", "E", "F", "G", "H"]:
-        ws.column_dimensions[col].width = 7.73
-    for col in ["C", "I", "J", "K", "L", "M"]:
-        ws.column_dimensions[col].width = 15.18
-
-    # B列のみ縮小表示
-    for row in ws.iter_rows(min_row=7, max_row=ws.max_row, min_col=2, max_col=2):
-        for cell in row:
-            cell.alignment = Alignment(
-                horizontal="left", vertical="center", shrink_to_fit=True
-            )
-
-    ws.page_setup.orientation = "landscape"
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.5, bottom=0.5)
-    ws.print_area = f"A1:M{ws.max_row}"
-
-
-# ------------------------------------------------------------
-# 注文書：特養ヘッダー
-# ------------------------------------------------------------
-def create_header_iwato(ws, supplier):
-    ws.merge_cells("A3:B3")
-    ws["A3"] = f"{supplier}　御中"
-    ws["A3"].font = Font(name="ＭＳ ゴシック", size=28, bold=True)
-
-    ws["B1"] = "注文書（介護老人福祉施設いわと）"
-    ws["B1"].font = Font(name="ＭＳ ゴシック", size=26, bold=True)
-    ws["B1"].alignment = Alignment(horizontal="center")
-
-    ws["K3"] = "(有) ハートミール"
-    ws["K3"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
-    ws["K3"].alignment = Alignment(horizontal="right")
-
-
-# ------------------------------------------------------------
-# 注文書：ユーハウスヘッダー
-# ------------------------------------------------------------
-def create_header_yuhouse(ws, supplier):
-    ws.merge_cells("A3:B3")
-    ws["A3"] = f"{supplier}　御中"
-    ws["A3"].font = Font(name="ＭＳ ゴシック", size=28, bold=True)
-
-    ws["B1"] = "注文書（ユーハウスいわと）"
-    ws["B1"].font = Font(name="ＭＳ ゴシック", size=26, bold=True)
-    ws["B1"].alignment = Alignment(horizontal="center")
-
-    ws["K3"] = "(有) ハートミール"
-    ws["K3"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
-    ws["K3"].alignment = Alignment(horizontal="right")
-# ------------------------------------------------------------
-# ③ 注文書作成（特養 / ユーハウスを選択式で統合）
-# ------------------------------------------------------------
-def create_order_workbook(uploaded_file, order_type):
-    df = pd.read_excel(uploaded_file)
-
-    # 欠損補完
-    for c in ["使用日", "仕入先", "食品名"]:
-        if c in df.columns:
-            df[c] = df[c].ffill()
-
-    # 使用日文字化
-    df["使用日"] = df["使用日"].astype(str)
-
-    # 数値列
-    if order_type == "特養（いわと）":
-        qty_col = "入所者"
-        extra_cols = ["職員"]
-    else:
-        qty_col = "ユーハウス入所者"
-        extra_cols = []
-
-    df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0)
-    for c in extra_cols:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-
-    # 出力列
-    keep_cols = [
-        "使用日", "食品名", qty_col, "単位",
-        "鮮度", "品温", "異物", "包装", "期限",
-        "備考欄", "納品時間", "検収者"
-    ]
-    for c in keep_cols:
-        if c not in df.columns:
-            df[c] = ""
-
-    suppliers = df["仕入先"].dropna().unique()
-
-    # ファイル名の接頭辞
-    token = detect_min_usage_date_token(df, "使用日")
-
-    if order_type == "特養（いわと）":
-        base_name = "注文書_いわと"
-    else:
-        base_name = "注文書_ユーハウス"
-
-    out_name = f"{base_name}{token}.xlsx" if token else f"{base_name}.xlsx"
-
-    # Excel 出力
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        pd.DataFrame({"dummy": [1]}).to_excel(writer, sheet_name="_dummy", index=False)
-
-        for supplier in suppliers:
-            sub = df[df["仕入先"] == supplier].copy()
-
-            # 集計
-            group_cols = ["使用日", "食品名", "単位"]
-            sum_cols = [qty_col] + extra_cols
-            sub = sub.groupby(group_cols, as_index=False)[sum_cols].sum()
-
-            # 列追加
-            for c in keep_cols:
-                if c not in sub.columns:
-                    sub[c] = ""
-
-            # 日付で並べ替え
-            sub["使用日_dt"] = sub["使用日"].apply(parse_mmdd)
-            sub = sub.sort_values(["使用日_dt", "食品名"], na_position="last")
-
-            # 出力列順に揃える
-            sub = sub[keep_cols]
-            sub["使用日"] = sub["使用日"].mask(sub["使用日"].duplicated(), "")
-
-            sheet_name = str(supplier)[:30]
-            sub.to_excel(writer, sheet_name=sheet_name, index=False, startrow=5)
-
-        # スタイル適用
-        wb = writer.book
-        for supplier in suppliers:
-            sheet = str(supplier)[:30]
-            ws = wb[sheet]
-
-            apply_order_style(ws)
-
-            # ヘッダー
-            if order_type == "特養（いわと）":
-                create_header_iwato(ws, supplier)
-            else:
-                create_header_yuhouse(ws, supplier)
-                ws["C6"].value = "入居者"
-
-            # 「納品時間 → 納品日」
-            for cell in ws[6]:
-                if cell.value == "納品時間":
-                    cell.value = "納品日"
-
-    buffer.seek(0)
-    return buffer.read(), out_name
+    return buffer.read(), fname
 
 
 # ------------------------------------------------------------
@@ -372,7 +185,7 @@ st.markdown(
 <div style="margin-bottom: 1.5rem;">
   <span class="app-title">発注・検収サポートシステム</span>
 </div>
-</div>
+
 <div style="margin-bottom: 2.0rem;">
   <span class="subtitle-pill sub-orange">毎日の業務をかんたんに</span>
   <span class="subtitle-pill sub-green">発注書を自動作成</span>
@@ -481,4 +294,6 @@ if order_file:
     except Exception as e:
         st.error("注文書作成中にエラーが発生しました。アップロードしたファイルの形式を確認してください。")
         st.exception(e)
+
+
 
