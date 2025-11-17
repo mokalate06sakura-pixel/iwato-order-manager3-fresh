@@ -196,44 +196,79 @@ def format_inspection_workbook(uploaded_file):
     return buffer.read(), fname
 
 # ------------------------------------------------------------
-# 注文書のスタイル（共通）
+# 注文書 書式設定（いわと／ユーハウス共通）
 # ------------------------------------------------------------
 def apply_order_style(ws):
     font_body = Font(name="ＭＳ ゴシック", size=18)
     border = Border(
-        left=Side("thin"), right=Side("thin"),
-        top=Side("thin"), bottom=Side("thin")
+        left=Side("thin"),
+        right=Side("thin"),
+        top=Side("thin"),
+        bottom=Side("thin")
     )
 
-    # ヘッダー
-    for cell in ws[6]:
+    header_row = 6
+
+    # --- 6行目：ヘッダー行 ---
+    for cell in ws[header_row]:
         cell.font = Font(name="ＭＳ ゴシック", size=18, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
 
-    # データ行
-    for row in ws.iter_rows(min_row=7):
+    # --- 7行目以降：データ行 ---
+    for row in ws.iter_rows(min_row=header_row + 1):
         for c in row:
             c.font = font_body
-            c.alignment = Alignment(vertical="center")
             c.border = border
+            c.alignment = Alignment(
+                vertical="center",
+                wrap_text=False,      # 折り返しなし
+            )
 
-    # 列幅
+    # --- 行高 ---
+    for i in range(1, ws.max_row + 1):
+        ws.row_dimensions[i].height = 30
+
+    # ------------------------------------------------------------
+    # 列幅設定（注文書仕様）
+    # ------------------------------------------------------------
+
+    # A列：使用日
     ws.column_dimensions["A"].width = 15.18
-    ws.column_dimensions["B"].width = 15.18
-    ws.column_dimensions["C"].width = 15.18
-    ws.column_dimensions["D"].width = 60
-    ws.column_dimensions["E"].width = 20
-    ws.column_dimensions["F"].width = 20
-    ws.column_dimensions["G"].width = 12
-    ws.column_dimensions["H"].width = 12
-    ws.column_dimensions["I"].width = 15
-    ws.column_dimensions["J"].width = 15
-    ws.column_dimensions["L"].width = 15
 
+    # B列：食品名（広く）
+    ws.column_dimensions["B"].width = 60.09
+
+    # D〜H列：7.73 に変更（数量・単位・確認欄）
+    for col in ["D", "E", "F", "G", "H"]:
+        ws.column_dimensions[col].width = 7.73
+
+    # C・I・J・K・L・M は 15.18
+    for col in ["C", "I", "J", "K", "L", "M"]:
+        ws.column_dimensions[col].width = 15.18
+
+    # ------------------------------------------------------------
+    # B列（食品名）を縮小して全体表示
+    # ------------------------------------------------------------
+    for row in ws.iter_rows(min_row=7, max_row=ws.max_row, min_col=2, max_col=2):
+        for cell in row:
+            cell.alignment = Alignment(
+                horizontal="left",
+                vertical="center",
+                wrap_text=False,        # 折り返しなし
+                shrink_to_fit=True      # 縮小して全体を表示
+            )
+
+    # ------------------------------------------------------------
     # 印刷設定
+    # ------------------------------------------------------------
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.5, bottom=0.5)
+
+    # 印刷範囲（A〜M列）
+    ws.print_area = f"A1:M{ws.max_row}"
+
 
 
 # ------------------------------------------------------------
@@ -271,43 +306,38 @@ def create_header_yuhouse(ws, supplier):
     ws["K3"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
 
 
-
 # ------------------------------------------------------------
-# ③ 注文書作成（特養 / ユーハウス 共通）
+# ③ 注文書作成（特養 / ユーハウス 共通・並び順修正版）
 # ------------------------------------------------------------
 def create_order_workbook(uploaded_file, order_type):
     df = pd.read_excel(uploaded_file)
 
     # 欠損補完
-    for c in ["使用日", "仕入先", "食品名"]:
+    for c in ["使用日", "仕入先", "食品名", "単位"]:
         if c in df.columns:
             df[c] = df[c].ffill()
 
     df["使用日"] = df["使用日"].astype(str)
 
-    # 数値列設定
+    # 元データの数量列（検収簿_加工済.xlsx の列を使用）
     if "特養" in order_type:
-        qty_col = "介護老人福祉施設いわと_入所者"
-        staff_col = "介護老人福祉施設いわと_職員"
-        df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0)
-        df[staff_col] = pd.to_numeric(df[staff_col], errors="coerce").fillna(0)
-        keep_extra = [qty_col, staff_col]
-
+        raw_qty = "介護老人福祉施設いわと_入所者"
+        raw_staff = "介護老人福祉施設いわと_職員"
+        df[raw_qty] = pd.to_numeric(df.get(raw_qty, 0), errors="coerce").fillna(0)
+        df[raw_staff] = pd.to_numeric(df.get(raw_staff, 0), errors="coerce").fillna(0)
     else:
-        qty_col = "ケアハウスユーハウス_入所者"
-        df[qty_col] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0)
-        keep_extra = [qty_col]
+        raw_qty = "ケアハウスユーハウス_入所者"
+        raw_staff = None
+        df[raw_qty] = pd.to_numeric(df.get(raw_qty, 0), errors="coerce").fillna(0)
 
-    # 出力列
-    base_cols = [
-        "使用日", "食品名", "単位",
-        "鮮度", "品温", "異物", "包装", "期限",
-        "備考欄", "納品日", "検収者"
-    ]
+    # 各評価項目（なければ空列作成）
+    for c in ["鮮度","品温","異物","包装","期限","備考欄","検収者"]:
+        if c not in df.columns:
+            df[c] = ""
 
-    keep_cols = base_cols + keep_extra
+    # 📌 納品日は見出しだけ使う。データは空欄にするのでここで空列を作成
+    df["納品日"] = ""
 
-    # 仕入先ごとに作成
     suppliers = df["仕入先"].dropna().unique()
 
     buffer = io.BytesIO()
@@ -320,12 +350,58 @@ def create_order_workbook(uploaded_file, order_type):
             sub["使用日_dt"] = sub["使用日"].apply(parse_mmdd)
             sub = sub.sort_values(["使用日_dt", "食品名"])
 
-            sub = sub[keep_cols]
+            # 人間に見せる列名へ変換
+            if "特養" in order_type:
+                # いわと → 入所者 / 職員 に変換
+                sub = sub.rename(columns={
+                    raw_qty: "入所者",
+                    raw_staff: "職員"
+                })
+                qty_label = "入所者"
+                staff_label = "職員"
+            else:
+                # ユーハウス → ユーハウス入居者
+                sub = sub.rename(columns={raw_qty: "ユーハウス入居者"})
+                qty_label = "ユーハウス入居者"
+                staff_label = None
+
+            # 並べる列順（指定通り）
+            col_order = [
+                "使用日",
+                "食品名",
+                qty_label,
+                "単位",
+            ]
+
+            if staff_label:
+                col_order.append(staff_label)
+
+            col_order += [
+                "鮮度",
+                "品温",
+                "異物",
+                "包装",
+                "期限",
+                "備考欄",
+                "納品日",   # ← L列ヘッダー
+                "検収者"
+            ]
+
+            # 不足列は空列で補う
+            for c in col_order:
+                if c not in sub.columns:
+                    sub[c] = ""
+
+            # 表示用に並び替え
+            sub = sub[col_order]
+
+            # 同じ使用日の2行目以降は空欄
             sub["使用日"] = sub["使用日"].mask(sub["使用日"].duplicated(), "")
 
             sheet = str(supplier)[:30]
             sub.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
 
+        # スタイルとヘッダー設定
         wb = writer.book
         for supplier in suppliers:
             ws = wb[str(supplier)[:30]]
@@ -335,10 +411,18 @@ def create_order_workbook(uploaded_file, order_type):
                 create_header_iwato(ws, supplier)
             else:
                 create_header_yuhouse(ws, supplier)
-                ws["C6"] = "入居者"
+                ws["C6"] = "ユーハウス入居者"
 
+        # ファイル名に使用日の最古日を付ける
     token = detect_min_usage_date_token(df, "使用日")
-    fname = f"注文書_{order_type}_{token}.xlsx"
+
+    if "特養" in order_type:
+        base_name = "注文書_いわと"
+    else:
+        base_name = "注文書_ユーハウス"
+
+    fname = f"{base_name}_{token}.xlsx" if token else f"{base_name}.xlsx"
+
 
     buffer.seek(0)
     return buffer.read(), fname
@@ -464,7 +548,6 @@ with col_right:
         except Exception as e:
             st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
             st.exception(e)
-
 
 
 
