@@ -254,7 +254,7 @@ else:
     # サンプルは "3/23月" のような文字列なので、そのまま使う（Excel表示も自然）
     use_dates = sorted(df[COL_USE_DATE].dropna().astype(str).unique().tolist())
 
-    created_sheets = []
+        created_sheets = []
     for use_date in use_dates:
         ddf = df[df[COL_USE_DATE].astype(str) == use_date].copy()
 
@@ -268,13 +268,11 @@ else:
             ddf["_staff"] = 0
             col_staff_tmp = "_staff"
 
-              grouped = (
+        grouped = (
             ddf.groupby([COL_FOOD_NAME, COL_SPEC], dropna=False)[[col_res, col_staff_tmp]]
             .sum()
             .reset_index()
         )
- 
-
         # シート作成（1ページ目）
         sheet_title = str(use_date)
         ws = _copy_base_sheet(wb, base_ws, sheet_title)
