@@ -564,6 +564,54 @@ with col_right:
             st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
             st.exception(e)
 
+import streamlit as st
+from pathlib import Path
+import tempfile
+
+st.subheader("丸八 発注書作成")
+
+kenshu_file = st.file_uploader("検収簿_加工済（xlsx）", type=["xlsx"], key="kenshu_maruhachi")
+template_file = st.file_uploader("丸八発注書テンプレ（xlsm）", type=["xlsm"], key="tpl_maruhachi")
+tag_file = st.file_uploader("丸八コード一覧（xlsm）", type=["xlsm"], key="tag_maruhachi")
+
+if st.button("丸八発注書を作成（特養・ユーハウス）", key="btn_maruhachi"):
+    if not (kenshu_file and template_file and tag_file):
+        st.error("3つのファイル（検収簿_加工済／テンプレ／コード一覧）をすべて選択してください。")
+    else:
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            k_path = td / "kenshu.xlsx"
+            t_path = td / "template.xlsm"
+            m_path = td / "tag.xlsm"
+
+            k_path.write_bytes(kenshu_file.getbuffer())
+            t_path.write_bytes(template_file.getbuffer())
+            m_path.write_bytes(tag_file.getbuffer())
+
+            out_dir = td / "out"
+
+            tokuyou_xlsm, yuhouse_xlsm = generate_maruhachi_order_forms_both_facilities(
+                kenshu_xlsx_path=k_path,
+                template_xlsm_path=t_path,
+                tag_xlsm_path=m_path,
+                out_dir=out_dir,
+                out_prefix="丸八発注書",
+            )
+
+            st.success("作成完了 ✅ ダウンロードできます")
+
+            st.download_button(
+                "特養：丸八発注書をダウンロード",
+                data=tokuyou_xlsm.read_bytes(),
+                file_name=tokuyou_xlsm.name,
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+            )
+            st.download_button(
+                "ユーハウス：丸八発注書をダウンロード",
+                data=yuhouse_xlsm.read_bytes(),
+                file_name=yuhouse_xlsm.name,
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+            )
 
 
 
