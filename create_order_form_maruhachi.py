@@ -6,6 +6,17 @@ import pandas as pd
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
 
+def find_col_by_keywords(df: pd.DataFrame, keywords: list[str]) -> str:
+    """
+    df.columns から、keywords をすべて含む列名を1つ返す。
+    見つからない場合は KeyError を投げる（列一覧も出す）。
+    """
+    cols = [str(c) for c in df.columns]
+    for c in cols:
+        if all(k in c for k in keywords):
+            return c
+    raise KeyError(f"列が見つかりません: keywords={keywords}\n利用可能な列:\n" + "\n".join(cols))
+
 INVALID_SHEET_CHARS = r'[:\\/*?\[\]]'  # Excelで禁止される文字
 
 def sanitize_sheet_title(title: str, existing: set[str]) -> str:
