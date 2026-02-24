@@ -688,14 +688,9 @@ if btn:
     if not (kenshu_file and template_file and tag_file):
         st.error("⚠ 3つのファイル（検収簿・テンプレ・コード一覧）をすべて選択してください。")
     else:
-        st.success("🎀 作成処理を開始します…")
-        # ↓ここに generate_maruhachi_order_forms_both_facilities を呼ぶ処理を書く
-    else:
-        with tempfile.TemporaryDirectory() as td:
-            td = Path(td)
-            k_path = td / "kenshu.xlsx"
-            t_path = td / "template.xlsm"
-            m_path = td / "tag.xlsm"
+        # ここに作成処理
+        st.success("🎀 作成を開始します…")
+        # （あなたの生成コードをここに貼る）
 
             k_path.write_bytes(kenshu_file.getbuffer())
             t_path.write_bytes(template_file.getbuffer())
@@ -725,6 +720,7 @@ if btn:
                 file_name=yuhouse_xlsm.name,
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
             )
+
 
 
 
