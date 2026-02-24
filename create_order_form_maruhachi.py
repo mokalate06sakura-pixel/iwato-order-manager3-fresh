@@ -228,11 +228,17 @@ def generate_maruhachi_order_workbook(
     # データ読み込み
     df = _read_kenshu(kenshu_xlsx_path)
 
-    # 施設別に数量列を選択
-    if facility_mode == "tokuyou":
-        col_res, col_staff = COL_TOKUYOU_RESIDENT, COL_TOKUYOU_STAFF
-    else:
-        col_res, col_staff = COL_YUHOUSE_RESIDENT, None
+    # 施設別に数量列を選択（列名ゆれ対策で自動検出）
+if facility_mode == "tokuyou":
+    col_res = find_col_by_keywords(df, ["介護老人福祉施設いわと", "入所者"])
+    col_staff = find_col_by_keywords(df, ["介護老人福祉施設いわと", "職員"])
+else:
+    # ユーハウス（職員列は使わない運用）
+    try:
+        col_res = find_col_by_keywords(df, ["ケアハウス", "入所者"])
+    except KeyError:
+        col_res = find_col_by_keywords(df, ["ユーハウス", "入所者"])
+    col_staff = None
 
     # タグ辞書（社内名→(コード,丸八品名,規格)）
     tag_map = load_tag_mapping(tag_xlsm_path)
@@ -255,14 +261,16 @@ def generate_maruhachi_order_workbook(
 
         # 品目ごとに合計
         ddf[col_res] = pd.to_numeric(ddf[col_res], errors="coerce").fillna(0)
-        if col_staff:
-            ddf[col_staff] = pd.to_numeric(ddf[col_staff], errors="coerce").fillna(0)
-        else:
-            ddf["_staff"] = 0
-            col_staff = "_staff"
+
+if col_staff is not None:
+    ddf[col_staff] = pd.to_numeric(ddf[col_staff], errors="coerce").fillna(0)
+    col_staff_tmp = col_staff
+else:
+    ddf["_staff"] = 0
+    col_staff_tmp = "_staff"
 
         grouped = (
-            ddf.groupby([COL_FOOD_NAME, COL_SPEC], dropna=False)[[col_res, col_staff]]
+            ddf.groupby([COL_FOOD_NAME, COL_SPEC], dropna=False)[[col_res, col_staff_tmp]]
             .sum()
             .reset_index()
         )
@@ -280,7 +288,7 @@ def generate_maruhachi_order_workbook(
             food_name = _norm(row[COL_FOOD_NAME])
             spec = str(row[COL_SPEC] or "")
             qty_res = float(row[col_res] or 0)
-            qty_staff = float(row[col_staff] or 0)
+            qty_staff = float(row[col_staff_tmp] or 0)
 
             if qty_res == 0 and qty_staff == 0:
                 continue
