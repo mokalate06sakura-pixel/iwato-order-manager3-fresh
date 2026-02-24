@@ -268,13 +268,12 @@ else:
             ddf["_staff"] = 0
             col_staff_tmp = "_staff"
 
-        grouped = (
+              grouped = (
             ddf.groupby([COL_FOOD_NAME, COL_SPEC], dropna=False)[[col_res, col_staff_tmp]]
             .sum()
             .reset_index()
         )
-    )
-        )
+ 
 
         # シート作成（1ページ目）
         sheet_title = str(use_date)
