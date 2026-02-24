@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
-
+from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
 # ------------------------------------------------------------
 # Streamlit 基本設定
 # ------------------------------------------------------------
@@ -563,6 +563,7 @@ with col_right:
         except Exception as e:
             st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
             st.exception(e)
+
 
 
 
