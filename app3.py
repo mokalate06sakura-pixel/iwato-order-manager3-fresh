@@ -662,13 +662,27 @@ import streamlit as st
 from pathlib import Path
 import tempfile
 
-st.subheader("丸八 発注書作成")
+st.title("🧁 丸八発注書作成")
 
-kenshu_file = st.file_uploader("検収簿_加工済（xlsx）", type=["xlsx"], key="kenshu_maruhachi")
-template_file = st.file_uploader("丸八発注書テンプレ（xlsm）", type=["xlsm"], key="tpl_maruhachi")
-tag_file = st.file_uploader("丸八コード一覧（xlsm）", type=["xlsm"], key="tag_maruhachi")
+st.markdown('<div class="cute-card">', unsafe_allow_html=True)
+st.markdown('<div class="cute-label">📄 検収簿_加工済（.xlsx）</div>', unsafe_allow_html=True)
+st.markdown('<div class="cute-hint">丸八ヒロタの行が入っているファイルを選択してください。</div>', unsafe_allow_html=True)
+kenshu_file = st.file_uploader(" ", type=["xlsx"], key="kenshu_maruhachi", label_visibility="collapsed")
+st.markdown('</div>', unsafe_allow_html=True)
 
-if st.button("丸八発注書を作成（特養・ユーハウス）", key="btn_maruhachi"):
+st.markdown('<div class="cute-card">', unsafe_allow_html=True)
+st.markdown('<div class="cute-label">🧾 丸八 発注書テンプレ（.xlsm）</div>', unsafe_allow_html=True)
+template_file = st.file_uploader(" ", type=["xlsm"], key="tpl_maruhachi", label_visibility="collapsed")
+st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<div class="cute-card">', unsafe_allow_html=True)
+st.markdown('<div class="cute-label">🏷️ 丸八コード一覧（.xlsm）</div>', unsafe_allow_html=True)
+tag_file = st.file_uploader(" ", type=["xlsm"], key="tag_maruhachi", label_visibility="collapsed")
+st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("---")
+
+btn = st.button("🍓 丸八発注書を作成（特養・ユーハウス）", key="btn_maruhachi")
     if not (kenshu_file and template_file and tag_file):
         st.error("3つのファイル（検収簿_加工済／テンプレ／コード一覧）をすべて選択してください。")
     else:
@@ -706,6 +720,7 @@ if st.button("丸八発注書を作成（特養・ユーハウス）", key="btn_
                 file_name=yuhouse_xlsm.name,
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
             )
+
 
 
 
