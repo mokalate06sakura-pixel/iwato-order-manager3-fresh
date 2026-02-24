@@ -682,15 +682,23 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("---")
 
+import tempfile
+from pathlib import Path
+
 btn = st.button("🍓 丸八発注書を作成（特養・ユーハウス）", key="btn_maruhachi")
 
 if btn:
     if not (kenshu_file and template_file and tag_file):
         st.error("⚠ 3つのファイル（検収簿・テンプレ・コード一覧）をすべて選択してください。")
     else:
-        # ここに作成処理
         st.success("🎀 作成を開始します…")
-        # （あなたの生成コードをここに貼る）
+
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+
+            k_path = td / "kenshu.xlsx"
+            t_path = td / "template.xlsm"
+            m_path = td / "tag.xlsm"
 
             k_path.write_bytes(kenshu_file.getbuffer())
             t_path.write_bytes(template_file.getbuffer())
@@ -720,11 +728,3 @@ if btn:
                 file_name=yuhouse_xlsm.name,
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
             )
-
-
-
-
-
-
-
-
