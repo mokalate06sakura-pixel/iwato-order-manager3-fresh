@@ -11,7 +11,101 @@ from create_order_form_maruhachi import generate_maruhachi_order_forms_both_faci
 # Streamlit 基本設定
 # ------------------------------------------------------------
 st.set_page_config(page_title="発注・検収サポートシステム", layout="wide")
+import streamlit as st
 
+def apply_cute_theme():
+    st.markdown("""
+    <style>
+    /* 全体背景 */
+    .stApp {
+        background: linear-gradient(180deg, #FFF7FB 0%, #F7FAFF 100%);
+    }
+
+    /* ページ横幅を少し締める（読みやすい） */
+    .block-container {
+        padding-top: 2rem;
+        max-width: 1000px;
+    }
+
+    /* タイトルをかわいく */
+    h1, h2, h3 {
+        letter-spacing: 0.02em;
+    }
+    h1 {
+        font-weight: 800;
+        color: #6B4E71;
+    }
+
+    /* カード風コンテナ */
+    .cute-card {
+        background: rgba(255,255,255,0.85);
+        border: 1px solid rgba(255, 192, 203, 0.35);
+        border-radius: 18px;
+        padding: 18px 18px 10px 18px;
+        box-shadow: 0 10px 30px rgba(107, 78, 113, 0.08);
+        backdrop-filter: blur(6px);
+        margin-bottom: 14px;
+    }
+    .cute-label {
+        font-weight: 700;
+        color: #6B4E71;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .cute-hint {
+        color: rgba(107,78,113,0.7);
+        font-size: 0.92rem;
+        margin-bottom: 10px;
+    }
+
+    /* file_uploader をカードっぽく */
+    [data-testid="stFileUploader"] {
+        background: rgba(255,255,255,0.6);
+        border: 1px dashed rgba(107,78,113,0.25);
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    /* ボタンをぷっくり可愛く */
+    .stButton > button {
+        background: linear-gradient(90deg, #FFB6C1 0%, #C7B3FF 100%);
+        color: white;
+        border: 0;
+        border-radius: 999px;
+        padding: 0.70rem 1.2rem;
+        font-weight: 800;
+        box-shadow: 0 10px 20px rgba(199, 179, 255, 0.25);
+        transition: transform .08s ease-in-out, box-shadow .08s ease-in-out;
+        width: 100%;
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 24px rgba(199, 179, 255, 0.30);
+    }
+    .stButton > button:active {
+        transform: translateY(1px);
+        box-shadow: 0 8px 14px rgba(199, 179, 255, 0.20);
+    }
+
+    /* 成功・エラー表示をやさしく */
+    [data-testid="stAlert"] {
+        border-radius: 14px;
+        border: 1px solid rgba(107,78,113,0.15);
+    }
+
+    /* 区切り線 */
+    hr {
+        border: none;
+        height: 1px;
+        background: rgba(107,78,113,0.15);
+        margin: 18px 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+apply_cute_theme()
 # ------------------------------------------------------------
 # 献ダテマン風 ゆるかわスタイル
 # ------------------------------------------------------------
@@ -612,6 +706,7 @@ if st.button("丸八発注書を作成（特養・ユーハウス）", key="btn_
                 file_name=yuhouse_xlsm.name,
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
             )
+
 
 
 
