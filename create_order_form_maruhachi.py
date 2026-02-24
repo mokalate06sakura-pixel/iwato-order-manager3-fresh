@@ -59,11 +59,10 @@ COL_SPEC = "換算値"
 
 SUPPLIER_NAME = "丸八ヒロタ"
 
-# 施設別 数量列（検収簿_加工済 の列名）
-COL_TOKUYOU_RESIDENT = "介護老人福祉施設いわと_入所者"   # 特養 入所者
-COL_TOKUYOU_STAFF    = "介護老人福祉施設いわと_職員"     # 特養 職員
-COL_YUHOUSE_RESIDENT = "ケアハウスユー…_入所者"           # ユーハウス 入所者（職員は無し）
-
+# 施設別 数量列（固定しない：find_col_by_keywordsで自動検出）
+# COL_TOKUYOU_RESIDENT = ...
+# COL_TOKUYOU_STAFF = ...
+# COL_YUHOUSE_RESIDENT = ...
 
 # ====== テンプレ仕様（ユーザー確定事項） ======
 TEMPLATE_SHEET_NAME = "丸八ヒロタ発注書"
