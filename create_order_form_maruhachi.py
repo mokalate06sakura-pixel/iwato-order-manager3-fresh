@@ -5,7 +5,37 @@ from typing import Dict, Tuple, List, Optional
 import pandas as pd
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
+INVALID_SHEET_CHARS = r'[:\\/*?\[\]]'  # Excelで禁止される文字
 
+def sanitize_sheet_title(title: str, existing: set[str]) -> str:
+    """
+    Excelのシート名制約に合わせて安全化：
+    - 禁止文字を置換
+    - 先頭/末尾の ' を避ける
+    - 最大31文字
+    - 重複する場合は _2, _3... を付与
+    """
+    t = str(title)
+    t = re.sub(INVALID_SHEET_CHARS, "-", t)  # / を含む禁止文字を - に
+    t = t.strip()
+    if t.startswith("'"):
+        t = t[1:]
+    if t.endswith("'"):
+        t = t[:-1]
+    if not t:
+        t = "Sheet"
+
+    # 31文字制限
+    t = t[:31]
+
+    # 重複回避（_2, _3…）
+    base = t
+    i = 2
+    while t in existing:
+        suffix = f"_{i}"
+        t = (base[: 31 - len(suffix)] + suffix)
+        i += 1
+    return t
 
 # ====== 固定（今回のサンプルに合わせた列名） ======
 COL_SUPPLIER = "仕入先"
