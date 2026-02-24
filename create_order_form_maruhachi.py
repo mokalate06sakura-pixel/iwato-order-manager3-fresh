@@ -254,24 +254,25 @@ else:
     # サンプルは "3/23月" のような文字列なので、そのまま使う（Excel表示も自然）
     use_dates = sorted(df[COL_USE_DATE].dropna().astype(str).unique().tolist())
 
-    created_sheets: List[str] = []
-    for use_date in use_dates:
-        ddf = df[df[COL_USE_DATE].astype(str) == use_date].copy()
+   created_sheets: List[str] = []
+for use_date in use_dates:
+    ddf = df[df[COL_USE_DATE].astype(str) == use_date].copy()
 
-        # 品目ごとに合計
-        ddf[col_res] = pd.to_numeric(ddf[col_res], errors="coerce").fillna(0)
+    # 品目ごとに合計
+    ddf[col_res] = pd.to_numeric(ddf[col_res], errors="coerce").fillna(0)
 
-if col_staff is not None:
-    ddf[col_staff] = pd.to_numeric(ddf[col_staff], errors="coerce").fillna(0)
-    col_staff_tmp = col_staff
-else:
-    ddf["_staff"] = 0
-    col_staff_tmp = "_staff"
+    if col_staff is not None:
+        ddf[col_staff] = pd.to_numeric(ddf[col_staff], errors="coerce").fillna(0)
+        col_staff_tmp = col_staff
+    else:
+        ddf["_staff"] = 0
+        col_staff_tmp = "_staff"
 
-        grouped = (
-            ddf.groupby([COL_FOOD_NAME, COL_SPEC], dropna=False)[[col_res, col_staff_tmp]]
-            .sum()
-            .reset_index()
+    grouped = (
+        ddf.groupby([COL_FOOD_NAME, COL_SPEC], dropna=False)[[col_res, col_staff_tmp]]
+        .sum()
+        .reset_index()
+    )
         )
 
         # シート作成（1ページ目）
