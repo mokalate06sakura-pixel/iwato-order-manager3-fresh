@@ -683,8 +683,13 @@ st.markdown('</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 btn = st.button("🍓 丸八発注書を作成（特養・ユーハウス）", key="btn_maruhachi")
+
+if btn:
     if not (kenshu_file and template_file and tag_file):
-        st.error("3つのファイル（検収簿_加工済／テンプレ／コード一覧）をすべて選択してください。")
+        st.error("⚠ 3つのファイル（検収簿・テンプレ・コード一覧）をすべて選択してください。")
+    else:
+        st.success("🎀 作成処理を開始します…")
+        # ↓ここに generate_maruhachi_order_forms_both_facilities を呼ぶ処理を書く
     else:
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
@@ -720,6 +725,7 @@ btn = st.button("🍓 丸八発注書を作成（特養・ユーハウス）", k
                 file_name=yuhouse_xlsm.name,
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
             )
+
 
 
 
