@@ -254,7 +254,7 @@ else:
     # サンプルは "3/23月" のような文字列なので、そのまま使う（Excel表示も自然）
     use_dates = sorted(df[COL_USE_DATE].dropna().astype(str).unique().tolist())
 
-   created_sheets: List[str] = []
+   created_sheets = []
 for use_date in use_dates:
     ddf = df[df[COL_USE_DATE].astype(str) == use_date].copy()
 
