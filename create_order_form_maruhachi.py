@@ -228,17 +228,18 @@ def generate_maruhachi_order_workbook(
     df = _read_kenshu(kenshu_xlsx_path)
 
     # 施設別に数量列を選択（列名ゆれ対策で自動検出）
-if facility_mode == "tokuyou":
-    col_res = find_col_by_keywords(df, ["介護老人福祉施設いわと", "入所者"])
-    col_staff = find_col_by_keywords(df, ["介護老人福祉施設いわと", "職員"])
-else:
-    # ユーハウス（職員列は使わない運用）
-    try:
-        col_res = find_col_by_keywords(df, ["ケアハウス", "入所者"])
-    except KeyError:
-        col_res = find_col_by_keywords(df, ["ユーハウス", "入所者"])
-    col_staff = None
+    if facility_mode == "tokuyou":
+        col_res = find_col_by_keywords(df, ["介護老人福祉施設いわと", "入所者"])
+        col_staff = find_col_by_keywords(df, ["介護老人福祉施設いわと", "職員"])
+    else:
+        # ユーハウス（職員列は使わない運用）
+        try:
+            col_res = find_col_by_keywords(df, ["ケアハウス", "入所者"])
+        except KeyError:
+            col_res = find_col_by_keywords(df, ["ユーハウス", "入所者"])
+        col_staff = None
 
+    
     # タグ辞書（社内名→(コード,丸八品名,規格)）
     tag_map = load_tag_mapping(tag_xlsm_path)
 
