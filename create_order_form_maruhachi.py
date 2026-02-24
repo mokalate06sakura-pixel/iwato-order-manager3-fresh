@@ -180,9 +180,13 @@ def _write_append_row(
     ws.cell(rr, COL_OUT_STAFF).value = qty_staff if qty_staff != 0 else None
 
 
-def _copy_base_sheet(wb: openpyxl.Workbook, base_ws: Worksheet, title: str) -> Worksheet:
+def _copy_base_sheet(wb, base_ws, title):
     ws2 = wb.copy_worksheet(base_ws)
-    ws2.title = title
+
+    existing = set(wb.sheetnames)
+    safe_title = sanitize_sheet_title(title, existing)
+    ws2.title = safe_title
+
     _clear_sheet_quantities(ws2)
     return ws2
 
