@@ -662,6 +662,28 @@ import streamlit as st
 from pathlib import Path
 import tempfile
 
+st.markdown("""
+<style>
+
+.stButton > button {
+    width:100%;
+    height:80px;
+    border-radius:15px;
+    font-size:18px;
+    font-weight:bold;
+}
+
+.block-container{
+    padding-top:2rem;
+}
+
+[data-testid="stSidebar"]{
+    background:#f5f5f5;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🧁 丸八発注書作成")
 
 st.markdown('<div class="cute-card">', unsafe_allow_html=True)
