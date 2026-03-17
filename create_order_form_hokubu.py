@@ -111,20 +111,46 @@ def _write_delivery_date(ws, delivery_value: str, is_tokuyou: bool):
 
     ws[cell] = f"{formatted}納品分"
 
+def _format_qty_with_unit(qty, unit) -> str:
+    """
+    数量 + 単位 を1セル表示用に整形
+    例: 12 + kg -> '12kg'
+        3.0 + 袋 -> '3袋'
+    """
+    if qty is None:
+        return ""
 
-def _write_row_tokuyou(ws, row_no: int, use_date: str, food_name: str, qty_res, qty_staff):
+    try:
+        q = float(qty)
+    except Exception:
+        return ""
+
+    if q == 0:
+        return ""
+
+    # 12.0 -> 12 にする
+    if q.is_integer():
+        q_str = str(int(q))
+    else:
+        q_str = str(q)
+
+    unit_str = "" if unit is None else str(unit).strip()
+    return f"{q_str}{unit_str}"
+    
+def _write_row_tokuyou(ws, row_no: int, use_date: str, food_name: str, qty_res, qty_staff, unit):
     ws.cell(row_no, 1).value = use_date      # A 使用日
     ws.cell(row_no, 2).value = food_name     # B 品名
-    ws.cell(row_no, 4).value = qty_res if qty_res != 0 else None   # D 入居者
+    ws.cell(row_no, 4).value = qty_res if qty_res != 0 else None   # D 入所者
     ws.cell(row_no, 5).value = qty_staff if qty_staff != 0 else None  # E 職員
+
     total = (qty_res or 0) + (qty_staff or 0)
-    ws.cell(row_no, 6).value = total if total != 0 else None       # F 合計
+    ws.cell(row_no, 6).value = _format_qty_with_unit(total, unit)   # F 合計+単位   
 
 
-def _write_row_yuhouse(ws, row_no: int, use_date: str, food_name: str, qty_res):
+def _write_row_yuhouse(ws, row_no: int, use_date: str, food_name: str, qty_res, unit):
     ws.cell(row_no, 1).value = use_date      # A 使用日
     ws.cell(row_no, 2).value = food_name     # B 品名
-    ws.cell(row_no, 4).value = qty_res if qty_res != 0 else None   # D 入居者
+    ws.cell(row_no, 4).value = _format_qty_with_unit(qty_res, unit)  # D 入所者+単位
 
 
 def generate_hokubu_order_workbook(
@@ -172,7 +198,7 @@ def generate_hokubu_order_workbook(
     df["納品日_dt"] = df["納品日"].apply(_parse_mmdd)
     df["使用日_dt"] = df["使用日"].apply(_parse_mmdd)
 
-    group_cols = ["納品日", "使用日", "食品名"]
+    grougroup_cols = ["納品日", "使用日", "食品名", "単位"]
     agg_map = {qty_cols[0]: "sum"}
     if is_tokuyou:
         agg_map[qty_cols[1]] = "sum"
@@ -192,45 +218,54 @@ def generate_hokubu_order_workbook(
     # ベースシートを残さず、コピーしたものを使う
     created = []
     current_delivery = None
-    page_no = 0
-    row_in_page = 0
-    ws = None
+　　current_use_date = None
+　　page_no = 0
+　　row_in_page = 0
+　　ws = None
 
     for _, rec in grouped.iterrows():
         delivery = str(rec["納品日"])
         use_date = str(rec["使用日"])
         food_name = str(rec["食品名"])
-
-        # 納品日が変わったら新しいページ群へ
-        if current_delivery != delivery or row_in_page >= ROWS_PER_PAGE:
-            current_delivery = delivery
-            page_no += 1
-            title = f"{delivery}_{'特養' if is_tokuyou else 'ユーハウス'}_{page_no}"
-            ws = _copy_sheet(wb, base_ws, title)
-            _clear_detail_rows(ws, is_tokuyou=is_tokuyou)
-            _write_delivery_date(ws, delivery, is_tokuyou=is_tokuyou)
-            created.append(ws.title)
-            row_in_page = 0
+　　　　 unit = rec["単位"]
+        
+　　　　# 納品日が変わったら新しいページ群へ
+        if (
+    　　　　current_delivery != delivery
+   　　　　 or current_use_date != use_date
+  　　　　  or row_in_page >= ROWS_PER_PAGE
+　　　　):
+    　　　　current_delivery = delivery
+   　　　　 current_use_date = use_date
+   　　　　 page_no += 1
+   　　　　 title = f"{delivery}_{use_date}_{'特養' if is_tokuyou else 'ユーハウス'}_{page_no}"
+   　　　　 ws = _copy_sheet(wb, base_ws, title)
+    　　　　_clear_detail_rows(ws, is_tokuyou=is_tokuyou)
+   　　　　 _write_delivery_date(ws, delivery, is_tokuyou=is_tokuyou)
+   　　　　 created.append(ws.title)
+   　　　　 row_in_page = 0
 
         target_row = DETAIL_START_ROW + row_in_page
 
         if is_tokuyou:
-            _write_row_tokuyou(
-                ws,
-                target_row,
-                use_date,
-                food_name,
-                float(rec[tok_res] or 0),
-                float(rec[tok_staff] or 0),
-            )
+           _write_row_tokuyou(
+   　　　　　　 ws,
+    　　　　　　target_row,
+    　　　　　　use_date,
+   　　　　　　 food_name,
+   　　　　　　 float(rec[tok_res] or 0),
+    　　　　　　float(rec[tok_staff] or 0),
+   　　　　　　 unit,
+)
         else:
             _write_row_yuhouse(
-                ws,
-                target_row,
-                use_date,
-                food_name,
-                float(rec[yuhouse_res] or 0),
-            )
+   　　　　　　　 ws,
+   　　　　　　　 target_row,
+  　　　　　　　  use_date,
+  　　　　　　　  food_name,
+  　　　　　　　  float(rec[yuhouse_res] or 0),
+   　　　　　　　 unit,
+)
 
         row_in_page += 1
 
