@@ -658,9 +658,6 @@ with col_right:
             st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
             st.exception(e)
 
-import streamlit as st
-from pathlib import Path
-import tempfile
 
 st.markdown("""
 <style>
@@ -684,36 +681,92 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🧁 丸八発注書作成")
-
-st.markdown('<div class="cute-card">', unsafe_allow_html=True)
-st.markdown('<div class="cute-label">📄 検収簿_加工済（.xlsx）</div>', unsafe_allow_html=True)
-st.markdown('<div class="cute-hint">丸八ヒロタの行が入っているファイルを選択してください。</div>', unsafe_allow_html=True)
-kenshu_file = st.file_uploader(" ", type=["xlsx"], key="kenshu_maruhachi", label_visibility="collapsed")
-st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('<div class="cute-card">', unsafe_allow_html=True)
-st.markdown('<div class="cute-label">🧾 丸八 発注書テンプレ（.xlsm）</div>', unsafe_allow_html=True)
-template_file = st.file_uploader(" ", type=["xlsm"], key="tpl_maruhachi", label_visibility="collapsed")
-st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown('<div class="cute-card">', unsafe_allow_html=True)
-st.markdown('<div class="cute-label">🏷️ 丸八コード一覧（.xlsm）</div>', unsafe_allow_html=True)
-tag_file = st.file_uploader(" ", type=["xlsm"], key="tag_maruhachi", label_visibility="collapsed")
-st.markdown('</div>', unsafe_allow_html=True)
-
+)
+# ------------------------------------------------------------
+# ③ 丸八発注書作成（献ダテマン風）
+# ------------------------------------------------------------
 st.markdown("---")
+st.markdown(
+    """
+    <div class="feature-card">
+      <div class="feature-title">③ 丸八発注書を作成</div>
+      <div class="feature-sub">
+        検収簿_加工済、丸八テンプレ、丸八コード一覧を使って<br>
+        特養用・ユーハウス用の丸八発注書を自動作成します。
+      </div>
+      <hr class="soft"/>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-import tempfile
-from pathlib import Path
+mcol1, mcol2, mcol3 = st.columns(3)
 
-btn = st.button("🍓 丸八発注書を作成（特養・ユーハウス）", key="btn_maruhachi")
+with mcol1:
+    st.markdown(
+        """
+        <div class="feature-card">
+          <div class="feature-title">📄 検収簿_加工済</div>
+          <div class="feature-sub">丸八ヒロタの行を含む加工済ファイル</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    kenshu_file = st.file_uploader(
+        "検収簿_加工済（xlsx）",
+        type=["xlsx"],
+        key="kenshu_maruhachi"
+    )
+
+with mcol2:
+    st.markdown(
+        """
+        <div class="feature-card">
+          <div class="feature-title">🧾 丸八発注書テンプレ</div>
+          <div class="feature-sub">丸八ヒロタ専用の発注書テンプレート</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    template_file = st.file_uploader(
+        "丸八発注書テンプレ（xlsm）",
+        type=["xlsm"],
+        key="tpl_maruhachi"
+    )
+
+with mcol3:
+    st.markdown(
+        """
+        <div class="feature-card">
+          <div class="feature-title">🏷️ 丸八コード一覧</div>
+          <div class="feature-sub">タグシート付きのコード対応表</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    tag_file = st.file_uploader(
+        "丸八コード一覧（xlsm）",
+        type=["xlsm"],
+        key="tag_maruhachi"
+    )
+
+st.markdown("### 出力")
+bcol1, bcol2 = st.columns(2)
+
+with bcol1:
+    btn = st.button("📦 丸八発注書を作成", key="btn_maruhachi")
+
+with bcol2:
+    st.markdown(
+        '<p class="small-note">※ 特養用とユーハウス用を同時に作成します。</p>',
+        unsafe_allow_html=True,
+    )
 
 if btn:
     if not (kenshu_file and template_file and tag_file):
         st.error("⚠ 3つのファイル（検収簿・テンプレ・コード一覧）をすべて選択してください。")
     else:
-        st.success("🎀 作成を開始します…")
+        st.success("丸八発注書を作成中です…")
 
         with tempfile.TemporaryDirectory() as td:
             td = Path(td)
@@ -738,15 +791,18 @@ if btn:
 
             st.success("作成完了 ✅ ダウンロードできます")
 
-            st.download_button(
-                "特養：丸八発注書をダウンロード",
-                data=tokuyou_xlsm.read_bytes(),
-                file_name=tokuyou_xlsm.name,
-                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-            )
-            st.download_button(
-                "ユーハウス：丸八発注書をダウンロード",
-                data=yuhouse_xlsm.read_bytes(),
-                file_name=yuhouse_xlsm.name,
-                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-            )
+            dcol1, dcol2 = st.columns(2)
+            with dcol1:
+                st.download_button(
+                    "📥 特養：丸八発注書をダウンロード",
+                    data=tokuyou_xlsm.read_bytes(),
+                    file_name=tokuyou_xlsm.name,
+                    mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                )
+            with dcol2:
+                st.download_button(
+                    "📥 ユーハウス：丸八発注書をダウンロード",
+                    data=yuhouse_xlsm.read_bytes(),
+                    file_name=yuhouse_xlsm.name,
+                    mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                )
