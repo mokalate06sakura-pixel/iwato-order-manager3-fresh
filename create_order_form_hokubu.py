@@ -84,9 +84,32 @@ def _clear_detail_rows(ws, is_tokuyou: bool):
     ws["A19"] = "備考欄"
 
 
+def _format_delivery_date(value: str) -> str:
+    """
+    '4/18土' → '4月18日'
+    '4/18'   → '4月18日'
+    """
+    if value is None:
+        return ""
+
+    s = str(value)
+
+    m = re.search(r"(\d{1,2})/(\d{1,2})", s)
+    if not m:
+        return s  # 変換できなければそのまま
+
+    mm = int(m.group(1))
+    dd = int(m.group(2))
+
+    return f"{mm}月{dd}日"
+
+
 def _write_delivery_date(ws, delivery_value: str, is_tokuyou: bool):
     cell = TOKUYOU_DELIVERY_CELL if is_tokuyou else YUHOUSE_DELIVERY_CELL
-    ws[cell] = f"{delivery_value}納品分"
+
+    formatted = _format_delivery_date(delivery_value)
+
+    ws[cell] = f"{formatted}納品分"
 
 
 def _write_row_tokuyou(ws, row_no: int, use_date: str, food_name: str, qty_res, qty_staff):
