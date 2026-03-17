@@ -7,6 +7,7 @@ import streamlit as st
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
 from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
+from create_order_form_hokubu import generate_hokubu_order_forms_both_facilities
 # ------------------------------------------------------------
 # Streamlit 基本設定
 # ------------------------------------------------------------
@@ -802,6 +803,52 @@ if btn:
             with dcol2:
                 st.download_button(
                     "📥 ユーハウス：丸八発注書をダウンロード",
+                    data=yuhouse_xlsm.read_bytes(),
+                    file_name=yuhouse_xlsm.name,
+                    mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                )
+st.markdown("---")
+st.markdown("## 北部市場発注書作成")
+
+hokubu_kenshu = st.file_uploader("検収簿_加工済（xlsx）", type=["xlsx"], key="hokubu_kenshu")
+hokubu_template = st.file_uploader("北部市場発注書テンプレ（xlsm）", type=["xlsm"], key="hokubu_tpl")
+
+if st.button("北部市場発注書を作成", key="btn_hokubu"):
+    if not (hokubu_kenshu and hokubu_template):
+        st.error("検収簿_加工済 と 北部市場テンプレを選択してください。")
+    else:
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            k_path = td / "kenshu.xlsx"
+            t_path = td / "template.xlsm"
+
+            k_path.write_bytes(hokubu_kenshu.getbuffer())
+            t_path.write_bytes(hokubu_template.getbuffer())
+
+            out_dir = td / "out"
+
+            tokuyou_xlsm, yuhouse_xlsm = generate_hokubu_order_forms_both_facilities(
+                kenshu_xlsx_path=k_path,
+                template_xlsm_path=t_path,
+                out_dir=out_dir,
+                out_prefix="北部市場発注書",
+            )
+
+            st.success("北部市場発注書を作成しました。")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.download_button(
+                    "特養：北部市場発注書をダウンロード",
+                    data=tokuyou_xlsm.read_bytes(),
+                    file_name=tokuyou_xlsm.name,
+                    mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                )
+            with c2:
+                st.download_button(
+                    "ユーハウス：北部市場発注書をダウンロード",
                     data=yuhouse_xlsm.read_bytes(),
                     file_name=yuhouse_xlsm.name,
                     mime="application/vnd.ms-excel.sheet.macroEnabled.12",
