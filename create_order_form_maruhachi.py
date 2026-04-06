@@ -19,9 +19,6 @@ def find_col_by_keywords(df: pd.DataFrame, keywords: list[str]) -> str:
 
 INVALID_SHEET_CHARS = r'[:\\/*?\[\]]'
 
-MARUHACHI_HEADER_TOKUYOU = "㈲ﾊｰﾄﾐｰﾙ　介護老人福祉施設いわと　"
-MARUHACHI_HEADER_YUHOUSE = "㈲ﾊｰﾄﾐｰﾙ　ユーハウスいわと　"
-
 HEADER_CELL_FACILITY = "I2"
 TOKUYOU_LABEL = "特養いわと"
 YUHOUSE_LABEL = "ユーハウスいわと"
@@ -33,7 +30,10 @@ COL_SPEC = "換算値"
 
 SUPPLIER_NAME = "丸八ヒロタ"
 
-TEMPLATE_SHEET_NAME = "丸八ヒロタ発注書"
+# テンプレのシート名
+TEMPLATE_SHEET_NAME_TOKUYOU = "丸八ヒロタ発注書"
+TEMPLATE_SHEET_NAME_YUHOUSE = "丸八ヒロタ発注書_ユーハウス"
+
 TAG_SHEET_NAME = "タグ"
 
 FIXED_FIRST_ROW = 6
@@ -155,18 +155,6 @@ def _write_append_row(
     ws.cell(rr, COL_OUT_STAFF).value = qty_staff if qty_staff != 0 else None
 
 
-def _set_print_header_facility(ws, facility_mode: str) -> None:
-    if facility_mode == "yuhouse":
-        facility_text = MARUHACHI_HEADER_YUHOUSE
-    else:
-        facility_text = MARUHACHI_HEADER_TOKUYOU
-
-    ws.oddHeader.right.text = (
-        "ｱﾊﾄ036　発注日　　　　月　　　日\n"
-        f"{facility_text}"
-    )
-
-
 def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
     ws2 = wb.copy_worksheet(base_ws)
 
@@ -180,8 +168,6 @@ def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
         ws2[HEADER_CELL_FACILITY] = YUHOUSE_LABEL
     else:
         ws2[HEADER_CELL_FACILITY] = TOKUYOU_LABEL
-
-    _set_print_header_facility(ws2, facility_mode)
 
     return ws2
 
@@ -216,7 +202,12 @@ def generate_maruhachi_order_workbook(
     tag_map = load_tag_mapping(tag_xlsm_path)
 
     wb = openpyxl.load_workbook(template_xlsm_path, keep_vba=True)
-    base_ws = wb[TEMPLATE_SHEET_NAME]
+
+    if facility_mode == "tokuyou":
+        base_ws = wb[TEMPLATE_SHEET_NAME_TOKUYOU]
+    else:
+        base_ws = wb[TEMPLATE_SHEET_NAME_YUHOUSE]
+
     fixed_row_index = _build_fixed_row_index(base_ws)
     _clear_sheet_quantities(base_ws)
 
@@ -294,11 +285,13 @@ def generate_maruhachi_order_workbook(
 
                 page += 1
 
-    if base_ws.title in wb.sheetnames:
-        try:
-            wb.remove(base_ws)
-        except Exception:
-            pass
+    # コピー元テンプレシートは削除
+    for template_name in [TEMPLATE_SHEET_NAME_TOKUYOU, TEMPLATE_SHEET_NAME_YUHOUSE]:
+        if template_name in wb.sheetnames:
+            try:
+                wb.remove(wb[template_name])
+            except Exception:
+                pass
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
