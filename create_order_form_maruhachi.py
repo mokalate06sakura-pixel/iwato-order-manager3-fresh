@@ -1,6 +1,3 @@
-MARUHACHI_HEADER_TOKUYOU = "㈲ﾊｰﾄﾐｰﾙ　介護老人福祉施設いわと　"
-MARUHACHI_HEADER_YUHOUSE = "㈲ﾊｰﾄﾐｰﾙ　ユーハウスいわと　"
-
 import re
 from pathlib import Path
 from typing import Dict, Tuple, List, Optional
@@ -8,6 +5,9 @@ from typing import Dict, Tuple, List, Optional
 import pandas as pd
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
+MARUHACHI_HEADER_TOKUYOU = "㈲ﾊｰﾄﾐｰﾙ　介護老人福祉施設いわと　"
+MARUHACHI_HEADER_YUHOUSE = "㈲ﾊｰﾄﾐｰﾙ　ユーハウスいわと　"
+
 
 def find_col_by_keywords(df: pd.DataFrame, keywords: list[str]) -> str:
     """
