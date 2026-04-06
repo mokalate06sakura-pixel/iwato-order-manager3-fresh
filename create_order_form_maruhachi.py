@@ -31,9 +31,8 @@ COL_SPEC = "換算値"
 SUPPLIER_NAME = "丸八ヒロタ"
 
 # テンプレのシート名
-TEMPLATE_SHEET_NAME_TOKUYOU = "丸八ヒロタ発注書"
-TEMPLATE_SHEET_NAME_YUHOUSE = "丸八ヒロタ発注書_ユーハウス"
-
+TEMPLATE_SHEET_NAME_TOKUYOU = "丸八ヒロタ発注書(介護老人福祉施設いわと）"
+TEMPLATE_SHEET_NAME_YUHOUSE = "丸八ヒロタ発注書(ユーハウス）"
 TAG_SHEET_NAME = "タグ"
 
 FIXED_FIRST_ROW = 6
