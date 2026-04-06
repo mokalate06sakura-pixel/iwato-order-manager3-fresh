@@ -195,8 +195,22 @@ def _write_append_row(
     ws.cell(rr, COL_OUT_RESIDENT).value = qty_resident if qty_resident != 0 else None
     ws.cell(rr, COL_OUT_STAFF).value = qty_staff if qty_staff != 0 else None
 
+def _set_print_header_facility(ws, facility_mode: str) -> None:
+    """
+    印刷ヘッダー右側の施設名を書き換える
+    """
+    if facility_mode == "yuhouse":
+        facility_text = MARUHACHI_HEADER_YUHOUSE
+    else:
+        facility_text = MARUHACHI_HEADER_TOKUYOU
 
-def _copy_base_sheet(wb, base_ws, title):
+    # 右ヘッダー全体を差し替え
+    ws.oddHeader.right.text = (
+        "ｱﾊﾄ036　発注日　　　　月　　　日\n"
+        f"{facility_text}"
+    )
+
+def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
     ws2 = wb.copy_worksheet(base_ws)
 
     existing = set(wb.sheetnames)
@@ -204,6 +218,8 @@ def _copy_base_sheet(wb, base_ws, title):
     ws2.title = safe_title
 
     _clear_sheet_quantities(ws2)
+    _set_print_header_facility(ws2, facility_mode)
+
     return ws2
 
 
@@ -279,7 +295,7 @@ def generate_maruhachi_order_workbook(
         )
         # シート作成（1ページ目）
         sheet_title = str(use_date)
-        ws = _copy_base_sheet(wb, base_ws, sheet_title)
+       ws = _copy_base_sheet(wb, base_ws, sheet_title, facility_mode)
         created_sheets.append(ws.title)
 
         # 追記管理
@@ -321,7 +337,7 @@ def generate_maruhachi_order_workbook(
                     cur_ws = ws
                 else:
                     # 次ページ作成（同じ日付名 + _{page}ページ目）
-                    cur_ws = _copy_base_sheet(wb, base_ws, f"{use_date}_{page}ページ目")
+                    cur_ws = _copy_base_sheet(wb, base_ws, f"{use_date}_{page}ページ目", facility_mode)
                     created_sheets.append(cur_ws.title)
 
                 start = APPEND_START_ROW
