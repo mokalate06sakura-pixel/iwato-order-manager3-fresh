@@ -1,3 +1,6 @@
+MARUHACHI_HEADER_TOKUYOU = "㈲ﾊｰﾄﾐｰﾙ　介護老人福祉施設いわと　"
+MARUHACHI_HEADER_YUHOUSE = "㈲ﾊｰﾄﾐｰﾙ　ユーハウスいわと　"
+
 import re
 from pathlib import Path
 from typing import Dict, Tuple, List, Optional
