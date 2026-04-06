@@ -30,9 +30,10 @@ COL_SPEC = "換算値"
 
 SUPPLIER_NAME = "丸八ヒロタ"
 
-# テンプレのシート名
+# テンプレの実シート名
 TEMPLATE_SHEET_NAME_TOKUYOU = "丸八ヒロタ発注書(介護老人福祉施設いわと）"
 TEMPLATE_SHEET_NAME_YUHOUSE = "丸八ヒロタ発注書(ユーハウス）"
+
 TAG_SHEET_NAME = "タグ"
 
 FIXED_FIRST_ROW = 6
@@ -284,7 +285,6 @@ def generate_maruhachi_order_workbook(
 
                 page += 1
 
-    # コピー元テンプレシートは削除
     for template_name in [TEMPLATE_SHEET_NAME_TOKUYOU, TEMPLATE_SHEET_NAME_YUHOUSE]:
         if template_name in wb.sheetnames:
             try:
