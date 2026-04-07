@@ -181,38 +181,37 @@ hr.soft {
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+/* ---------------------------
+   サイドバー：献ダテマン風
+---------------------------- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #f7f5f2 0%, #efece6 100%);
+    border-right: 1px solid rgba(120, 120, 120, 0.15);
+}
 
-    /* ---------------------------
-       サイドバー：献ダテマン風
-    ---------------------------- */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #f7f5f2 0%, #efece6 100%);
-        border-right: 1px solid rgba(120, 120, 120, 0.15);
-    }
+[data-testid="stSidebar"] .block-container {
+    padding-top: 1.2rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
 
-    [data-testid="stSidebar"] .block-container {
-        padding-top: 1.2rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }
+/* サイドバー見出し */
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #4a4a4a;
+    font-weight: 800;
+    margin-bottom: 0.6rem;
+}
 
-    /* サイドバー見出し */
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 {
-        color: #4a4a4a;
-        font-weight: 800;
-        margin-bottom: 0.6rem;
-    }
+/* radio 全体 */
+[data-testid="stSidebar"] [role="radiogroup"] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 0.6rem;
+}
 
-    /* radio 全体 */
-    [data-testid="stSidebar"] [role="radiogroup"] {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        margin-top: 0.6rem;
-    }
-
-    /* 各メニュー項目の土台 */
+/* 各メニュー項目の土台 */
     [data-testid="stSidebar"] [role="radiogroup"] label {
         background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
         border: 1px solid rgba(80, 80, 80, 0.15);
