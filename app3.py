@@ -113,15 +113,15 @@ apply_cute_theme()
 # ------------------------------------------------------------
 CUSTOM_CSS = """
 <style>
-　body {
+body {
     background-color: #fffdf8;
-　}
-　.main {
+}
+.main {
     background-image: linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px),
                       linear-gradient(180deg, rgba(0,0,0,0.03) 1px, transparent 1px);
     background-size: 24px 24px;
-　}
-　.app-title {
+}
+.app-title {
     font-size: 34px;
     font-weight: bold;
     color: #ff7f50;
@@ -130,8 +130,8 @@ CUSTOM_CSS = """
     border-radius: 999px;
     background: #fff0e6;
     border: 2px solid #ffa76b;
-　}
-　.subtitle-pill {
+}
+.subtitle-pill {
     display: inline-block;
     padding: 0.25rem 1rem;
     border-radius: 999px;
@@ -139,45 +139,132 @@ CUSTOM_CSS = """
     font-weight: 600;
     margin-right: 0.5rem;
     color: white;
-　}
-　.sub-orange { background: #ff9b50; }
-　.sub-green  { background: #5cb85c; }
-　.sub-blue   { background: #5bc0de; }
-　.feature-card {
+}
+.sub-orange { background: #ff9b50; }
+.sub-green  { background: #5cb85c; }
+.sub-blue   { background: #5bc0de; }
+
+.feature-card {
     background: white;
     border-radius: 18px;
     padding: 1.2rem 1.5rem;
     margin-bottom: 1.4rem;
     box-shadow: 0 3px 6px rgba(0,0,0,0.06);
     border: 1px solid #f2e4d5;
-　}
-　.feature-title {
+}
+.feature-title {
     font-weight: bold;
     font-size: 18px;
     margin-bottom: 0.3rem;
     color: #444;
-　}
-　.feature-sub {
+}
+.feature-sub {
     font-size: 12px;
     color: #777;
     margin-bottom: 0.7rem;
-　}
-　.small-note {
+}
+.small-note {
     font-size: 11px;
     color: #777;
     margin-top: 0.4rem;
-　}
-　.btn-cute {
+}
+.btn-cute {
     background: #ffb27a !important;
     color: white !important;
     font-weight: bold !important;
     border-radius: 10px !important;
-　}
-　hr.soft {
+}
+hr.soft {
     border: none;
     border-top: 1px dashed #e0cbb0;
     margin: 0.4rem 0 0.8rem 0;
-　}
+}
+
+/* ---------------------------
+   サイドバー: 献ダテマン風
+---------------------------- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #f7f5f2 0%, #efece6 100%);
+    border-right: 1px solid rgba(120, 120, 120, 0.15);
+}
+
+[data-testid="stSidebar"] .block-container {
+    padding-top: 1.2rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+/* サイドバー見出し */
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #4a4a4a;
+    font-weight: 800;
+    margin-bottom: 0.6rem;
+}
+
+/* radio 全体 */
+[data-testid="stSidebar"] [role="radiogroup"] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 0.6rem;
+}
+
+/* 各メニュー項目の土台 */
+[data-testid="stSidebar"] [role="radiogroup"] label {
+    background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
+    border: 1px solid rgba(80, 80, 80, 0.15);
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    transition: all 0.15s ease-in-out;
+    cursor: pointer;
+}
+
+/* ホバー */
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.10);
+    border-color: rgba(255, 150, 100, 0.45);
+}
+
+/* ラベル文字 */
+[data-testid="stSidebar"] [role="radiogroup"] label p {
+    font-size: 16px;
+    font-weight: 800;
+    color: #333333;
+    margin: 0;
+}
+
+/* ラジオ丸を少し大きく */
+[data-testid="stSidebar"] input[type="radio"] {
+    transform: scale(1.15);
+    accent-color: #ff9b50;
+}
+
+/* 選択中の項目 */
+[data-testid="stSidebar"] label:has(input[type="radio"]:checked) {
+    background: linear-gradient(90deg, #ffb36b 0%, #ffd08a 100%);
+    border: 1px solid rgba(220, 120, 40, 0.55);
+    box-shadow: 0 8px 18px rgba(255, 155, 80, 0.22);
+}
+
+[data-testid="stSidebar"] label:has(input[type="radio"]:checked) p {
+    color: #4d2c00;
+}
+
+/* サイドバー区切り用の小見出し風 */
+.sidebar-section-title {
+    display: inline-block;
+    background: #fff3e7;
+    border: 1px solid #f1c79f;
+    color: #7a4a1f;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 6px 12px;
+    margin-bottom: 0.6rem;
+    font-size: 13px;
+}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
