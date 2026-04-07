@@ -20,9 +20,6 @@ def find_col_by_keywords(df: pd.DataFrame, keywords: list[str]) -> str:
 
 INVALID_SHEET_CHARS = r'[:\\/*?\[\]]'
 
-HEADER_CELL_FACILITY = "I2"
-TOKUYOU_LABEL = "特養いわと"
-YUHOUSE_LABEL = "ユーハウスいわと"
 
 COL_SUPPLIER = "仕入先"
 COL_USE_DATE = "使用日"
@@ -205,11 +202,23 @@ def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
     safe_title = sanitize_sheet_title(title, existing)
     ws2.title = safe_title
 
-    # テンプレの印刷・余白・ヘッダー等をコピー
+    # レイアウトコピー
     _copy_sheet_layout(base_ws, ws2)
 
+    # ★ここに追加（ヘッダー設定）
+    if facility_mode == "yuhouse":
+        center_text = "㈲ハートミール ユーハウスいわと"
+    else:
+        center_text = "㈲ハートミール 介護老人福祉施設いわと"
+
+    ws2.oddHeader.left.text   = '&"ＭＳ ゴシック,太字"&18&D'
+    ws2.oddHeader.center.text = f'&"ＭＳ ゴシック,標準"&18{center_text}'
+    ws2.oddHeader.right.text  = '&"ＭＳ ゴシック,標準"&18&P / &N'
+
+    # データ初期化
     _clear_sheet_quantities(ws2)
 
+    # セル表示（I2）
     if facility_mode == "yuhouse":
         ws2[HEADER_CELL_FACILITY] = YUHOUSE_LABEL
     else:
