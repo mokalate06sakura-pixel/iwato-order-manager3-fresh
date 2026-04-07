@@ -160,7 +160,9 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
     """
     テンプレシートの印刷・レイアウト系設定をコピーする
     """
-    ws2.sheet_view = copy(base_ws.sheet_view)
+    # ここは代入しない
+    # ws2.sheet_view = copy(base_ws.sheet_view)
+
     ws2.sheet_format = copy(base_ws.sheet_format)
     ws2.sheet_properties = copy(base_ws.sheet_properties)
     ws2.print_options = copy(base_ws.print_options)
@@ -187,7 +189,7 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
         if str(merged) not in [str(r) for r in ws2.merged_cells.ranges]:
             ws2.merge_cells(str(merged))
 
-    # 追加
+    # ヘッダー・フッター文字列を明示コピー
     ws2.oddHeader.left.text = base_ws.oddHeader.left.text
     ws2.oddHeader.center.text = base_ws.oddHeader.center.text
     ws2.oddHeader.right.text = base_ws.oddHeader.right.text
