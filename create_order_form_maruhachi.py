@@ -168,7 +168,7 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
     ws2.print_options = copy(base_ws.print_options)
     ws2.page_margins = copy(base_ws.page_margins)
     ws2.page_setup = copy(base_ws.page_setup)
-    ws2.header_footer = copy(base_ws.header_footer)
+    
 
     ws2.print_area = base_ws.print_area
     ws2.print_title_rows = base_ws.print_title_rows
