@@ -113,15 +113,15 @@ apply_cute_theme()
 # ------------------------------------------------------------
 CUSTOM_CSS = """
 <style>
-body {
+　body {
     background-color: #fffdf8;
-}
-.main {
+　}
+　.main {
     background-image: linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px),
                       linear-gradient(180deg, rgba(0,0,0,0.03) 1px, transparent 1px);
     background-size: 24px 24px;
-}
-.app-title {
+　}
+　.app-title {
     font-size: 34px;
     font-weight: bold;
     color: #ff7f50;
@@ -130,8 +130,8 @@ body {
     border-radius: 999px;
     background: #fff0e6;
     border: 2px solid #ffa76b;
-}
-.subtitle-pill {
+　}
+　.subtitle-pill {
     display: inline-block;
     padding: 0.25rem 1rem;
     border-radius: 999px;
@@ -139,45 +139,45 @@ body {
     font-weight: 600;
     margin-right: 0.5rem;
     color: white;
-}
-.sub-orange { background: #ff9b50; }
-.sub-green  { background: #5cb85c; }
-.sub-blue   { background: #5bc0de; }
-.feature-card {
+　}
+　.sub-orange { background: #ff9b50; }
+　.sub-green  { background: #5cb85c; }
+　.sub-blue   { background: #5bc0de; }
+　.feature-card {
     background: white;
     border-radius: 18px;
     padding: 1.2rem 1.5rem;
     margin-bottom: 1.4rem;
     box-shadow: 0 3px 6px rgba(0,0,0,0.06);
     border: 1px solid #f2e4d5;
-}
-.feature-title {
+　}
+　.feature-title {
     font-weight: bold;
     font-size: 18px;
     margin-bottom: 0.3rem;
     color: #444;
-}
-.feature-sub {
+　}
+　.feature-sub {
     font-size: 12px;
     color: #777;
     margin-bottom: 0.7rem;
-}
-.small-note {
+　}
+　.small-note {
     font-size: 11px;
     color: #777;
     margin-top: 0.4rem;
-}
-.btn-cute {
+　}
+　.btn-cute {
     background: #ffb27a !important;
     color: white !important;
     font-weight: bold !important;
     border-radius: 10px !important;
-}
-hr.soft {
+　}
+　hr.soft {
     border: none;
     border-top: 1px dashed #e0cbb0;
     margin: 0.4rem 0 0.8rem 0;
-}
+　}
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
