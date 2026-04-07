@@ -1,10 +1,10 @@
 import re
+from copy import copy
 from pathlib import Path
 from typing import Dict, Tuple, List
-from copy import copy
 
-import pandas as pd
 import openpyxl
+import pandas as pd
 from openpyxl.worksheet.worksheet import Worksheet
 
 
@@ -20,6 +20,9 @@ def find_col_by_keywords(df: pd.DataFrame, keywords: list[str]) -> str:
 
 INVALID_SHEET_CHARS = r'[:\\/*?\[\]]'
 
+HEADER_CELL_FACILITY = "I2"
+TOKUYOU_LABEL = "特養いわと"
+YUHOUSE_LABEL = "ユーハウスいわと"
 
 COL_SUPPLIER = "仕入先"
 COL_USE_DATE = "使用日"
@@ -154,18 +157,11 @@ def _write_append_row(
 
 
 def _copy_sheet_layout(base_ws, ws2) -> None:
-    """
-    テンプレシートの印刷・レイアウト系設定をコピーする
-    """
-    # ここは代入しない
-    # ws2.sheet_view = copy(base_ws.sheet_view)
-
     ws2.sheet_format = copy(base_ws.sheet_format)
     ws2.sheet_properties = copy(base_ws.sheet_properties)
     ws2.print_options = copy(base_ws.print_options)
     ws2.page_margins = copy(base_ws.page_margins)
     ws2.page_setup = copy(base_ws.page_setup)
-    
 
     ws2.print_area = base_ws.print_area
     ws2.print_title_rows = base_ws.print_title_rows
@@ -182,11 +178,7 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
         ws2.column_dimensions[key].bestFit = dim.bestFit
         ws2.column_dimensions[key].outline_level = dim.outline_level
 
-    for merged in list(base_ws.merged_cells.ranges):
-        if str(merged) not in [str(r) for r in ws2.merged_cells.ranges]:
-            ws2.merge_cells(str(merged))
-
-    # ヘッダー・フッター文字列を明示コピー
+    # odd header / footer only
     ws2.oddHeader.left.text = base_ws.oddHeader.left.text
     ws2.oddHeader.center.text = base_ws.oddHeader.center.text
     ws2.oddHeader.right.text = base_ws.oddHeader.right.text
@@ -194,7 +186,8 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
     ws2.oddFooter.left.text = base_ws.oddFooter.left.text
     ws2.oddFooter.center.text = base_ws.oddFooter.center.text
     ws2.oddFooter.right.text = base_ws.oddFooter.right.text
-    
+
+
 def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
     ws2 = wb.copy_worksheet(base_ws)
 
@@ -254,8 +247,6 @@ def generate_maruhachi_order_workbook(
 
     use_dates = sorted(df[COL_USE_DATE].dropna().astype(str).unique().tolist())
 
-    created_sheets = []
-
     for use_date in use_dates:
         ddf = df[df[COL_USE_DATE].astype(str) == use_date].copy()
         ddf[col_res] = pd.to_numeric(ddf[col_res], errors="coerce").fillna(0)
@@ -275,7 +266,6 @@ def generate_maruhachi_order_workbook(
 
         sheet_title = str(use_date)
         ws = _copy_base_sheet(wb, base_ws, sheet_title, facility_mode)
-        created_sheets.append(ws.title)
 
         append_items: List[Tuple[str, str, float, float]] = []
 
@@ -290,7 +280,7 @@ def generate_maruhachi_order_workbook(
 
             tag_key = _norm(food_name)
             if tag_key in tag_map:
-                code, maru_name, maru_spec = tag_map[tag_key]
+                code, _, _ = tag_map[tag_key]
                 if code in fixed_row_index:
                     rr = fixed_row_index[code]
                     ws.cell(rr, COL_OUT_USE_DATE).value = use_date
@@ -314,7 +304,6 @@ def generate_maruhachi_order_workbook(
                         f"{use_date}_{page}ページ目",
                         facility_mode,
                     )
-                    created_sheets.append(cur_ws.title)
 
                 for rr in range(APPEND_START_ROW, APPEND_START_ROW + APPEND_MAX_ROWS):
                     if pos >= len(append_items):
@@ -326,11 +315,14 @@ def generate_maruhachi_order_workbook(
 
                 page += 1
 
+    # テンプレシートは削除せず非表示
+    if TEMPLATE_SHEET_NAME_TOKUYOU in wb.sheetnames:
+        wb[TEMPLATE_SHEET_NAME_TOKUYOU].sheet_state = "hidden"
+    if TEMPLATE_SHEET_NAME_YUHOUSE in wb.sheetnames:
+        wb[TEMPLATE_SHEET_NAME_YUHOUSE].sheet_state = "hidden"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
-    wb[TEMPLATE_SHEET_NAME_TOKUYOU].sheet_state = "hidden"
-    wb[TEMPLATE_SHEET_NAME_YUHOUSE].sheet_state = "hidden"
     return out_path
 
 
