@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 from typing import Dict, Tuple, List
+from copy import copy
 
 import pandas as pd
 import openpyxl
@@ -155,12 +156,51 @@ def _write_append_row(
     ws.cell(rr, COL_OUT_STAFF).value = qty_staff if qty_staff != 0 else None
 
 
+def _copy_sheet_layout(base_ws, ws2) -> None:
+    """
+    テンプレシートの印刷・レイアウト系設定をコピーする
+    """
+    # シート表示設定
+    ws2.sheet_view = copy(base_ws.sheet_view)
+    ws2.sheet_format = copy(base_ws.sheet_format)
+    ws2.sheet_properties = copy(base_ws.sheet_properties)
+    ws2.print_options = copy(base_ws.print_options)
+    ws2.page_margins = copy(base_ws.page_margins)
+    ws2.page_setup = copy(base_ws.page_setup)
+    ws2.header_footer = copy(base_ws.header_footer)
+
+    # 印刷範囲・タイトル行列
+    ws2.print_area = base_ws.print_area
+    ws2.print_title_rows = base_ws.print_title_rows
+    ws2.print_title_cols = base_ws.print_title_cols
+
+    # 行の高さ
+    for key, dim in base_ws.row_dimensions.items():
+        ws2.row_dimensions[key].height = dim.height
+        ws2.row_dimensions[key].hidden = dim.hidden
+        ws2.row_dimensions[key].outlineLevel = dim.outlineLevel
+
+    # 列幅
+    for key, dim in base_ws.column_dimensions.items():
+        ws2.column_dimensions[key].width = dim.width
+        ws2.column_dimensions[key].hidden = dim.hidden
+        ws2.column_dimensions[key].bestFit = dim.bestFit
+        ws2.column_dimensions[key].outline_level = dim.outline_level
+
+    # 結合セル
+    for merged in list(base_ws.merged_cells.ranges):
+        if str(merged) not in [str(r) for r in ws2.merged_cells.ranges]:
+            ws2.merge_cells(str(merged))
+
 def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
     ws2 = wb.copy_worksheet(base_ws)
 
     existing = set(wb.sheetnames)
     safe_title = sanitize_sheet_title(title, existing)
     ws2.title = safe_title
+
+    # テンプレの印刷・余白・ヘッダー等をコピー
+    _copy_sheet_layout(base_ws, ws2)
 
     _clear_sheet_quantities(ws2)
 
