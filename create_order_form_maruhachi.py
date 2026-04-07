@@ -160,7 +160,6 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
     """
     テンプレシートの印刷・レイアウト系設定をコピーする
     """
-    # シート表示設定
     ws2.sheet_view = copy(base_ws.sheet_view)
     ws2.sheet_format = copy(base_ws.sheet_format)
     ws2.sheet_properties = copy(base_ws.sheet_properties)
@@ -169,29 +168,34 @@ def _copy_sheet_layout(base_ws, ws2) -> None:
     ws2.page_setup = copy(base_ws.page_setup)
     ws2.header_footer = copy(base_ws.header_footer)
 
-    # 印刷範囲・タイトル行列
     ws2.print_area = base_ws.print_area
     ws2.print_title_rows = base_ws.print_title_rows
     ws2.print_title_cols = base_ws.print_title_cols
 
-    # 行の高さ
     for key, dim in base_ws.row_dimensions.items():
         ws2.row_dimensions[key].height = dim.height
         ws2.row_dimensions[key].hidden = dim.hidden
         ws2.row_dimensions[key].outlineLevel = dim.outlineLevel
 
-    # 列幅
     for key, dim in base_ws.column_dimensions.items():
         ws2.column_dimensions[key].width = dim.width
         ws2.column_dimensions[key].hidden = dim.hidden
         ws2.column_dimensions[key].bestFit = dim.bestFit
         ws2.column_dimensions[key].outline_level = dim.outline_level
 
-    # 結合セル
     for merged in list(base_ws.merged_cells.ranges):
         if str(merged) not in [str(r) for r in ws2.merged_cells.ranges]:
             ws2.merge_cells(str(merged))
 
+    # 追加
+    ws2.oddHeader.left.text = base_ws.oddHeader.left.text
+    ws2.oddHeader.center.text = base_ws.oddHeader.center.text
+    ws2.oddHeader.right.text = base_ws.oddHeader.right.text
+
+    ws2.oddFooter.left.text = base_ws.oddFooter.left.text
+    ws2.oddFooter.center.text = base_ws.oddFooter.center.text
+    ws2.oddFooter.right.text = base_ws.oddFooter.right.text
+    
 def _copy_base_sheet(wb, base_ws, title, facility_mode: str):
     ws2 = wb.copy_worksheet(base_ws)
 
@@ -328,6 +332,8 @@ def generate_maruhachi_order_workbook(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
+    wb[TEMPLATE_SHEET_NAME_TOKUYOU].sheet_state = "hidden"
+    wb[TEMPLATE_SHEET_NAME_YUHOUSE].sheet_state = "hidden"
     return out_path
 
 
