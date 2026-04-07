@@ -182,7 +182,7 @@ hr.soft {
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 /* ---------------------------
-   サイドバー：献ダテマン風
+   サイドバー:献ダテマン風
 ---------------------------- */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #f7f5f2 0%, #efece6 100%);
