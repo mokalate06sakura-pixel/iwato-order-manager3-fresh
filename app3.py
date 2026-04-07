@@ -652,11 +652,10 @@ with st.sidebar:
     page = st.radio(
         "画面を選択してください",
         [
-           
-    　　　　　"① 検収簿整形",
-  　　　　　  "② 注文書作成",
-   　　　　　 "③ 丸八発注書作成",
-   　　　　　 "④ 北部市場発注書作成",
+           "① 検収簿整形",
+  　　　　　"② 注文書作成",
+   　　　　 "③ 丸八発注書作成",
+   　　　　 "④ 北部市場発注書作成",
 
         ],
         label_visibility="collapsed",
@@ -669,7 +668,7 @@ if page == "① 検収簿を整える":
     st.markdown(
         """
 <div class="feature-card">
-  <div class="feature-title">① 検収簿を整える</div>
+  <div class="feature-title">① 検収簿を整える"/div>
   <div class="feature-sub">
     MultiIndex の検収記録簿を<br>
     A〜H列だけの加工済みファイルに整形します。<br>
