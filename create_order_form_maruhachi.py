@@ -285,13 +285,6 @@ def generate_maruhachi_order_workbook(
 
                 page += 1
 
-    # コピー元テンプレシートは削除
-    for template_name in [TEMPLATE_SHEET_NAME_TOKUYOU, TEMPLATE_SHEET_NAME_YUHOUSE]:
-        if template_name in wb.sheetnames:
-            try:
-                wb.remove(wb[template_name])
-            except Exception:
-                pass
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
