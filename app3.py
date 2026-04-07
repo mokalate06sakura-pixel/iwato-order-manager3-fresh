@@ -646,14 +646,16 @@ st.markdown(
 )
 
 with st.sidebar:
-    st.markdown("## 📋 メニュー")
+    st.markdown('<div class="sidebar-section-title">ユーザーメニュー</div>', unsafe_allow_html=True)
+    st.markdown("### 📋 メニュー")
+
     page = st.radio(
         "画面を選択してください",
         [
-            "検収簿を整える",
-            "注文書を作成",
-            "丸八発注書を作成",
-            "北部市場発注書を作成",
+            "① 検収簿を整える",
+            "② 注文書を作成",
+            "③ 丸八発注書を作成",
+            "④ 北部市場発注書を作成",
         ],
         label_visibility="collapsed",
     )
