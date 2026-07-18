@@ -347,6 +347,13 @@ def format_inspection_workbook(uploaded_file):
 
     df.columns = flat_cols
 
+    # F列に相当する「換算値」の空白を確実に0で補完する。
+    # 元Excelの列位置だけでなく、見出し名でも処理することで、
+    # 結合見出しや列構成の違いがあっても出力へ反映させる。
+    if "換算値" in df.columns:
+        conversion_blank = df["換算値"].map(_is_blank)
+        df.loc[conversion_blank, "換算値"] = 0
+
     # ---- 欠損補完 ----
     for col in ["納品日", "使用日", "朝昼夕", "仕入先"]:
         if col in df.columns:
@@ -396,7 +403,12 @@ def format_inspection_workbook(uploaded_file):
     # 存在するものだけ残す
     needed_cols = [c for c in needed_cols if c in df.columns]
 
-    df_out = df[needed_cols]
+    df_out = df[needed_cols].copy()
+
+    # Excel出力直前にも再確認し、換算値の空白を残さない
+    if "換算値" in df_out.columns:
+        conversion_blank = df_out["換算値"].map(_is_blank)
+        df_out.loc[conversion_blank, "換算値"] = 0
 
     # ---- 出力 ----
     buffer = io.BytesIO()
