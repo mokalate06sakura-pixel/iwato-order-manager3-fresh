@@ -299,8 +299,38 @@ def detect_min_usage_date_token(df, col="使用日"):
 # ------------------------------------------------------------
 # ① 検収簿整形ロジック（修正版：不要列を削除）
 # ------------------------------------------------------------
+def _is_blank(value):
+    """Excelの空白セル（NaN、None、空文字、空白だけの文字列）を判定する。"""
+    return pd.isna(value) or (isinstance(value, str) and value.strip() == "")
+
+
+def apply_ek_blank_rows_and_f_zero(df):
+    """VBA「EK空行削除_後にF空白へ0」と同じデータ整形を行う。
+
+    元ファイルの見出し行は pandas が読み取る際に除外されているため、
+    ここではデータ行だけを対象にする。
+    """
+    if df.shape[1] >= 11:
+        # ExcelのE～K列（0始まりでは4～10）がすべて空白の行を削除
+        ek_all_blank = df.iloc[:, 4:11].apply(
+            lambda row: all(_is_blank(value) for value in row), axis=1
+        )
+        df = df.loc[~ek_all_blank].copy()
+
+    if df.shape[1] >= 6:
+        # ExcelのF列（0始まりでは5）の空白を0で埋める
+        f_col = df.columns[5]
+        f_blank = df[f_col].map(_is_blank)
+        df.loc[f_blank, f_col] = 0
+
+    return df
+
+
 def format_inspection_workbook(uploaded_file):
     df = pd.read_excel(uploaded_file, header=[6, 7])
+
+    # VBA「EK空行削除_後にF空白へ0」を自動適用
+    df = apply_ek_blank_rows_and_f_zero(df)
 
     # ---- MultiIndex → フラット化 ----
     flat_cols = []
@@ -381,7 +411,7 @@ def format_inspection_workbook(uploaded_file):
 # ------------------------------------------------------------
 # 注文書 書式設定（いわと／ユーハウス共通）
 # ------------------------------------------------------------
-def apply_order_style(ws):
+def apply_order_style(ws, is_tokuyou=False):
     font_body = Font(name="ＭＳ ゴシック", size=18)
     border = Border(
         left=Side("thin"),
@@ -394,7 +424,7 @@ def apply_order_style(ws):
 
     # --- 6行目：ヘッダー行 ---
     for cell in ws[header_row]:
-        cell.font = Font(name="ＭＳ ゴシック", size=18, bold=True)
+        cell.font = Font(name="ＭＳ ゴシック", size=12, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
 
@@ -429,6 +459,43 @@ def apply_order_style(ws):
     # C・I・J・K・L・M は 15.18
     for col in ["C", "I", "J", "K", "L", "M"]:
         ws.column_dimensions[col].width = 15.18
+
+    # 特養用マクロの指定
+    if is_tokuyou:
+        for col in ["I", "L", "M"]:
+            ws.column_dimensions[col].width = 7
+
+        # C～E列の外枠を太線にする（内側の罫線は維持）
+        thick = Side(style="thick")
+        start_row = 6
+        end_row = ws.max_row
+        if end_row >= start_row:
+            for row in range(start_row, end_row + 1):
+                ws.cell(row, 3).border = Border(
+                    left=thick,
+                    right=ws.cell(row, 3).border.right,
+                    top=thick if row == start_row else ws.cell(row, 3).border.top,
+                    bottom=thick if row == end_row else ws.cell(row, 3).border.bottom,
+                )
+                ws.cell(row, 5).border = Border(
+                    left=ws.cell(row, 5).border.left,
+                    right=thick,
+                    top=thick if row == start_row else ws.cell(row, 5).border.top,
+                    bottom=thick if row == end_row else ws.cell(row, 5).border.bottom,
+                )
+            for col in range(3, 6):
+                ws.cell(start_row, col).border = Border(
+                    left=ws.cell(start_row, col).border.left,
+                    right=ws.cell(start_row, col).border.right,
+                    top=thick,
+                    bottom=ws.cell(start_row, col).border.bottom,
+                )
+                ws.cell(end_row, col).border = Border(
+                    left=ws.cell(end_row, col).border.left,
+                    right=ws.cell(end_row, col).border.right,
+                    top=ws.cell(end_row, col).border.top,
+                    bottom=thick,
+                )
 
     # ------------------------------------------------------------
     # B列（食品名）を縮小して全体表示
@@ -594,6 +661,16 @@ def create_order_workbook(uploaded_file, order_type):
 
             sub = sub[col_order]
 
+            # VBAと同様に、主数量（C列）が空白または0の行を削除
+            qty_values = pd.to_numeric(sub[qty_label], errors="coerce").fillna(0)
+            sub = sub.loc[qty_values != 0].copy()
+
+            # 特養用：職員数（E列）が0なら空欄にする
+            if staff_label:
+                staff_values = pd.to_numeric(sub[staff_label], errors="coerce").fillna(0)
+                sub[staff_label] = sub[staff_label].astype(object)
+                sub.loc[staff_values == 0, staff_label] = ""
+
             # 同じ使用日は2行目以降空欄に
             sub["使用日"] = sub["使用日"].mask(sub["使用日"].duplicated(), "")
 
@@ -604,7 +681,7 @@ def create_order_workbook(uploaded_file, order_type):
         wb = writer.book
         for supplier in suppliers:
             ws = wb[str(supplier)[:30]]
-            apply_order_style(ws)
+            apply_order_style(ws, is_tokuyou="特養" in order_type)
 
             if "特養" in order_type:
                 create_header_iwato(ws, supplier)
