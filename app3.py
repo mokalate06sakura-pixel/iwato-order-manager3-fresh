@@ -8,6 +8,8 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.utils import get_column_letter
 from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
 from create_order_form_hokubu import generate_hokubu_order_forms_both_facilities
 # ------------------------------------------------------------
@@ -421,6 +423,123 @@ def format_inspection_workbook(uploaded_file):
     return buffer.read(), fname
 
 # ------------------------------------------------------------
+# 業者別仕訳表 作成ロジック
+# ------------------------------------------------------------
+def _safe_sheet_name(value, used_names):
+    """仕入先名をExcelで使用可能な一意のシート名へ変換する。"""
+    name = str(value).strip() if not pd.isna(value) else "仕入先未設定"
+    name = re.sub(r'[\\/*?:\[\]]', '＿', name)
+    name = name[:31] or "仕入先未設定"
+
+    base = name
+    index = 2
+    while name in used_names:
+        suffix = f"_{index}"
+        name = f"{base[:31 - len(suffix)]}{suffix}"
+        index += 1
+
+    used_names.add(name)
+    return name
+
+
+def create_vendor_journal_workbook(uploaded_file):
+    """加工済み検収簿から、仕入先ごとのテーブル付き仕訳表を作成する。"""
+    df = pd.read_excel(uploaded_file)
+
+    if "仕入先" not in df.columns:
+        raise ValueError("『仕入先』列が見つかりません。検収簿（加工済）を選択してください。")
+
+    # A列（通常は納品日）は削除せず、Excel出力後に非表示にする。
+    # A列を残した状態の列位置で、H・I・J列の見出しを固定する。
+    if df.shape[1] < 10:
+        raise ValueError("必要な列数が不足しています。H列・I列・J列を確認できません。")
+
+    rename_map = {
+        df.columns[7]: "特養入所者",  # H列
+        df.columns[8]: "特養職員",    # I列
+        df.columns[9]: "ユーハウス",  # J列
+    }
+    df = df.rename(columns=rename_map)
+
+    # 各業者シートの最終列に、手入力用の「コメント」欄を追加
+    # 既にコメント列が存在する場合も、最終列へ移動する。
+    if "コメント" in df.columns:
+        comment_values = df.pop("コメント")
+        df["コメント"] = comment_values
+    else:
+        df["コメント"] = ""
+
+    # 仕入先が空白の行も独立シートにまとめる
+    df["仕入先"] = df["仕入先"].fillna("仕入先未設定").astype(str).str.strip()
+    df.loc[df["仕入先"] == "", "仕入先"] = "仕入先未設定"
+
+    buffer = io.BytesIO()
+    used_names = set()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        for table_index, (vendor, vendor_df) in enumerate(df.groupby("仕入先", sort=True), start=1):
+            sheet_name = _safe_sheet_name(vendor, used_names)
+            vendor_df = vendor_df.reset_index(drop=True)
+            vendor_df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            ws = writer.book[sheet_name]
+
+            # A3・横向き印刷設定
+            ws.page_setup.paperSize = ws.PAPERSIZE_A3
+            ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 0
+            ws.print_options.horizontalCentered = True
+            ws.freeze_panes = "B2"
+            ws.auto_filter.ref = ws.dimensions
+
+            # A列はデータを保持したまま非表示にする
+            ws.column_dimensions["A"].hidden = True
+
+            # 印刷範囲
+            ws.print_area = ws.dimensions
+            ws.page_margins = PageMargins(
+                left=0.25, right=0.25, top=0.4, bottom=0.4,
+                header=0.2, footer=0.2
+            )
+
+            # テーブル挿入
+            if ws.max_row >= 2 and ws.max_column >= 1:
+                table_ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
+                table = Table(displayName=f"VendorTable{table_index}", ref=table_ref)
+                style = TableStyleInfo(
+                    name="TableStyleMedium2",
+                    showFirstColumn=False,
+                    showLastColumn=False,
+                    showRowStripes=True,
+                    showColumnStripes=False,
+                )
+                table.tableStyleInfo = style
+                ws.add_table(table)
+
+            # 見出しと列幅
+            for cell in ws[1]:
+                cell.font = Font(name="ＭＳ ゴシック", size=11, bold=True)
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+            for column_cells in ws.columns:
+                letter = get_column_letter(column_cells[0].column)
+                max_length = max(
+                    (len(str(cell.value)) if cell.value is not None else 0)
+                    for cell in column_cells
+                )
+                ws.column_dimensions[letter].width = min(max(max_length + 2, 10), 32)
+
+            ws.row_dimensions[1].height = 32
+
+    buffer.seek(0)
+    token = detect_min_usage_date_token(df, "使用日")
+    fname = f"業者別仕訳表_{token}.xlsx" if token else "業者別仕訳表.xlsx"
+    return buffer.read(), fname
+
+
+# ------------------------------------------------------------
 # 注文書 書式設定（いわと／ユーハウス共通）
 # ------------------------------------------------------------
 def apply_order_style(ws, is_tokuyou=False):
@@ -742,9 +861,10 @@ with st.sidebar:
         "画面を選択してください",
                [
             "① 検収簿整形",
-            "② 注文書作成",
-            "③ 丸八発注書作成",
-            "④ 北部市場発注書作成",
+            "② 業者別仕訳表",
+            "③ 注文書作成",
+            "④ 丸八発注書作成",
+            "⑤ 北部市場発注書作成",
         ],
         label_visibility="collapsed",
     )
@@ -789,13 +909,59 @@ if page == "① 検収簿整形":
             )
 
 # ------------------------------------------------------------
-# ② 注文書作成
+# ② 業者別仕訳表
 # ------------------------------------------------------------
-elif page == "② 注文書作成":
+elif page == "② 業者別仕訳表":
     st.markdown(
         """
 <div class="feature-card">
-  <div class="feature-title">② 注文書を作成</div>
+  <div class="feature-title">② 業者別仕訳表を作成</div>
+  <div class="feature-sub">
+    加工済み検収簿を仕入先ごとのシートに分割し、<br>
+    テーブル形式・A3横向き印刷設定で出力します。
+  </div>
+  <hr class="soft"/>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    vendor_file = st.file_uploader(
+        "検収簿（加工済 Excel）をアップロード",
+        type=["xlsx"],
+        key="vendor_journal_src",
+    )
+
+    if vendor_file:
+        try:
+            if st.button("📊 業者別仕訳表を作成する", key="btn_vendor_journal"):
+                (
+                    st.session_state["vendor_journal_data"],
+                    st.session_state["vendor_journal_fname"],
+                ) = create_vendor_journal_workbook(vendor_file)
+                st.success("業者別仕訳表の作成が完了しました！")
+
+            if "vendor_journal_data" in st.session_state:
+                st.download_button(
+                    "📥 業者別仕訳表をダウンロード",
+                    data=st.session_state["vendor_journal_data"],
+                    file_name=st.session_state["vendor_journal_fname"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+        except Exception as e:
+            st.error("業者別仕訳表の作成中にエラーが発生しました。")
+            st.exception(e)
+
+
+# ------------------------------------------------------------
+# ③ 注文書作成
+# ------------------------------------------------------------
+elif page == "③ 注文書作成":
+    st.markdown(
+        """
+<div class="feature-card">
+  <div class="feature-title">③ 注文書を作成</div>
   <div class="feature-sub">
     特養（介護老人福祉施設いわと）<br>
     かユーハウスいわと を選んで、<br>
@@ -845,13 +1011,13 @@ elif page == "② 注文書作成":
             st.exception(e)
 
 # ------------------------------------------------------------
-# ③ 丸八発注書作成
+# ④ 丸八発注書作成
 # ------------------------------------------------------------
-elif page == "③ 丸八発注書作成":
+elif page == "④ 丸八発注書作成":
     st.markdown(
         """
 <div class="feature-card">
-  <div class="feature-title">③ 丸八発注書を作成</div>
+  <div class="feature-title">④ 丸八発注書を作成</div>
   <div class="feature-sub">
     検収簿_加工済、丸八テンプレ、丸八コード一覧を使って<br>
     特養用・ユーハウス用の丸八発注書を自動作成します。
@@ -970,13 +1136,13 @@ elif page == "③ 丸八発注書作成":
                     )
 
 # ------------------------------------------------------------
-# ④ 北部市場発注書作成
+# ⑤ 北部市場発注書作成
 # ------------------------------------------------------------
-elif page == "④ 北部市場発注書作成":
+elif page == "⑤ 北部市場発注書作成":
     st.markdown(
         """
 <div class="feature-card">
-  <div class="feature-title">④ 北部市場発注書を作成</div>
+  <div class="feature-title">⑤ 北部市場発注書を作成</div>
   <div class="feature-sub">
     検収簿_加工済と北部市場発注書テンプレを使って<br>
     特養用・ユーハウス用の発注書を自動作成します。
@@ -1040,4 +1206,5 @@ elif page == "④ 北部市場発注書作成":
                         data=yuhouse_xlsm.read_bytes(),
                         file_name=yuhouse_xlsm.name,
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                    )et.macroEnabled.12",
                     )
