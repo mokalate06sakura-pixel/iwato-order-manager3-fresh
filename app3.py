@@ -1206,5 +1206,3 @@ elif page == "⑤ 北部市場発注書作成":
                         data=yuhouse_xlsm.read_bytes(),
                         file_name=yuhouse_xlsm.name,
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                    )et.macroEnabled.12",
-                    )
