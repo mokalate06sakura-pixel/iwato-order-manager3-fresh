@@ -8,7 +8,6 @@ import pandas as pd
 import streamlit as st
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
-from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
 # 補助機能は、ファイル不足や内部エラーでアプリ全体が停止しないよう安全に読み込む
 MARUHACHI_IMPORT_ERROR = None
@@ -463,16 +462,36 @@ def create_vendor_journal_workbook(uploaded_file):
         raise ValueError("『仕入先』列が見つかりません。検収簿（加工済）を選択してください。")
 
     # A列（通常は納品日）は削除せず、Excel出力後に非表示にする。
-    # A列を残した状態の列位置で、H・I・J列の見出しを固定する。
-    if df.shape[1] < 10:
-        raise ValueError("必要な列数が不足しています。H列・I列・J列を確認できません。")
+    # 列番号ではなく元の見出し名を判定して名称を変更する。
+    # これによりH列「単位」を保持し、I・J・K列だけを変更する。
+    rename_map = {}
 
-    rename_map = {
-        df.columns[7]: "特養入所者",  # H列
-        df.columns[8]: "特養職員",    # I列
-        df.columns[9]: "ユーハウス",  # J列
-    }
+    for col in df.columns:
+        col_text = str(col)
+
+        if "介護老人福祉施設いわと" in col_text and "入所者" in col_text:
+            rename_map[col] = "特養入所者"
+
+        elif "介護老人福祉施設いわと" in col_text and "職員" in col_text:
+            rename_map[col] = "特養職員"
+
+        elif (
+            ("ケアハウス" in col_text or "ユーハウス" in col_text or "ユー" in col_text)
+            and ("入所者" in col_text or "入居者" in col_text)
+            and "職員" not in col_text
+        ):
+            rename_map[col] = "ユーハウス"
+
     df = df.rename(columns=rename_map)
+
+    required_headers = ["単位", "特養入所者", "特養職員", "ユーハウス"]
+    missing_headers = [name for name in required_headers if name not in df.columns]
+    if missing_headers:
+        raise ValueError(
+            "必要な列が見つかりません: "
+            + "、".join(missing_headers)
+            + "。検収簿（加工済）の見出しを確認してください。"
+        )
 
     # 各業者シートの最終列に、手入力用の「コメント」欄を追加
     # 既にコメント列が存在する場合も、最終列へ移動する。
@@ -505,7 +524,6 @@ def create_vendor_journal_workbook(uploaded_file):
             ws.page_setup.fitToHeight = 0
             ws.print_options.horizontalCentered = True
             ws.freeze_panes = "B2"
-            ws.auto_filter.ref = ws.dimensions
 
             # A列はデータを保持したまま非表示にする
             ws.column_dimensions["A"].hidden = True
@@ -516,20 +534,6 @@ def create_vendor_journal_workbook(uploaded_file):
                 left=0.25, right=0.25, top=0.4, bottom=0.4,
                 header=0.2, footer=0.2
             )
-
-            # テーブル挿入
-            if ws.max_row >= 2 and ws.max_column >= 1:
-                table_ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
-                table = Table(displayName=f"VendorTable{table_index}", ref=table_ref)
-                style = TableStyleInfo(
-                    name="TableStyleMedium2",
-                    showFirstColumn=False,
-                    showLastColumn=False,
-                    showRowStripes=True,
-                    showColumnStripes=False,
-                )
-                table.tableStyleInfo = style
-                ws.add_table(table)
 
             # 見出しと列幅
             for cell in ws[1]:
@@ -931,7 +935,7 @@ elif page == "② 業者別仕訳表":
   <div class="feature-title">② 業者別仕訳表を作成</div>
   <div class="feature-sub">
     加工済み検収簿を仕入先ごとのシートに分割し、<br>
-    テーブル形式・A3横向き印刷設定で出力します。
+    通常のセル形式・A3横向き印刷設定で出力します。
   </div>
   <hr class="soft"/>
 </div>
