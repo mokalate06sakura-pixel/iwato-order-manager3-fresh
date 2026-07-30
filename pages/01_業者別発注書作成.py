@@ -201,13 +201,13 @@ def apply_order_style(ws):
     ws.print_area = f"A1:L{ws.max_row}"
 
 
-def create_header(ws, supplier):
+def create_header(ws, supplier, order_title):
     ws.merge_cells("A3:B3")
     ws["A3"] = f"{supplier} 御中"
     ws["A3"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
 
-    ws["B1"] = "注文書"
-    ws["B1"].font = Font(name="ＭＳ ゴシック", size=26, bold=True)
+    ws["B1"] = order_title
+    ws["B1"].font = Font(name="ＭＳ ゴシック", size=24, bold=True)
     ws["B1"].alignment = Alignment(horizontal="center")
 
     ws["K3"] = "(有) ハートミール"
@@ -215,13 +215,190 @@ def create_header(ws, supplier):
     ws["K3"].alignment = Alignment(horizontal="right")
 
 
-def create_orders_from_vendor_sheets(uploaded_file):
-    excel_file = pd.ExcelFile(uploaded_file)
+def create_tokuyou_order_workbook(excel_file):
+    """特養入所者と特養職員を同じ発注書へまとめる。"""
+    required_columns = [
+        "使用日",
+        "食品名",
+        "単位",
+        "特養入所者",
+        "特養職員",
+    ]
 
-    if not excel_file.sheet_names:
-        raise ValueError("Excelファイルにシートがありません。")
+    output_data = []
+    all_usage_dates = []
 
-    required_columns = ["使用日", "食品名", "総合計", "単位"]
+    for source_sheet in excel_file.sheet_names:
+        df = pd.read_excel(excel_file, sheet_name=source_sheet)
+        df = df.dropna(how="all").copy()
+        df.columns = [str(column).strip() for column in df.columns]
+
+        missing = [
+            column for column in required_columns
+            if column not in df.columns
+        ]
+
+        if missing:
+            raise ValueError(
+                f"シート「{source_sheet}」に必要な列がありません: "
+                + "、".join(missing)
+            )
+
+        supplier = source_sheet
+
+        if "仕入先" in df.columns:
+            values = (
+                df["仕入先"]
+                .dropna()
+                .astype(str)
+                .str.strip()
+            )
+            values = values[values != ""]
+
+            if not values.empty:
+                supplier = values.iloc[0]
+
+        df["入所者"] = pd.to_numeric(
+            df["特養入所者"],
+            errors="coerce",
+        ).fillna(0)
+
+        df["職員"] = pd.to_numeric(
+            df["特養職員"],
+            errors="coerce",
+        ).fillna(0)
+
+        # 入所者・職員の両方が0の行だけ除外
+        df = df.loc[
+            (df["入所者"] != 0) | (df["職員"] != 0)
+        ].copy()
+
+        if df.empty:
+            continue
+
+        # 0は空欄表示
+        df["入所者"] = df["入所者"].astype(object)
+        df["職員"] = df["職員"].astype(object)
+        df.loc[pd.to_numeric(df["入所者"], errors="coerce").fillna(0) == 0, "入所者"] = ""
+        df.loc[pd.to_numeric(df["職員"], errors="coerce").fillna(0) == 0, "職員"] = ""
+
+        df["使用日_dt"] = df["使用日"].apply(parse_mmdd)
+        df = df.sort_values(
+            ["使用日_dt", "食品名"],
+            na_position="last",
+        )
+
+        df["備考欄"] = (
+            df["コメント"].fillna("")
+            if "コメント" in df.columns
+            else ""
+        )
+
+        for column in [
+            "鮮度",
+            "品温",
+            "異物",
+            "包装",
+            "期限",
+            "納品日",
+            "検収者",
+        ]:
+            df[column] = ""
+
+        columns = [
+            "使用日",
+            "食品名",
+            "入所者",
+            "単位",
+            "職員",
+            "鮮度",
+            "品温",
+            "異物",
+            "包装",
+            "期限",
+            "備考欄",
+            "納品日",
+            "検収者",
+        ]
+
+        order_df = df[columns].copy()
+
+        order_df["使用日"] = order_df["使用日"].mask(
+            order_df["使用日"].duplicated(),
+            "",
+        )
+
+        all_usage_dates.extend(df["使用日"].dropna().tolist())
+        output_data.append((supplier, order_df))
+
+    if not output_data:
+        raise ValueError(
+            "特養入所者または特養職員に発注数量が入力されたデータがありません。"
+        )
+
+    buffer = io.BytesIO()
+    used_names = set()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        sheet_map = []
+
+        for supplier, order_df in output_data:
+            sheet_name = safe_sheet_name(supplier, used_names)
+
+            order_df.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False,
+                startrow=5,
+            )
+
+            sheet_map.append((sheet_name, supplier))
+
+        workbook = writer.book
+
+        for sheet_name, supplier in sheet_map:
+            ws = workbook[sheet_name]
+            apply_order_style(ws)
+            create_header(
+                ws,
+                supplier,
+                "注文書（介護老人福祉施設いわと）",
+            )
+
+            ws["C6"] = "入所者"
+            ws["D6"] = "単位"
+            ws["E6"] = "職員"
+            ws["K6"] = "備考欄"
+
+            # 特養の列幅
+            ws.column_dimensions["C"].width = 12
+            ws.column_dimensions["D"].width = 10
+            ws.column_dimensions["E"].width = 12
+            ws.column_dimensions["K"].width = 22
+
+            # 特養はA～M列
+            ws.print_area = f"A1:M{ws.max_row}"
+
+    token = detect_min_usage_date_token(all_usage_dates)
+    filename = (
+        f"発注書_特養_{token}.xlsx"
+        if token
+        else "発注書_特養.xlsx"
+    )
+
+    buffer.seek(0)
+    return buffer.read(), filename, len(output_data)
+
+
+def create_yuhouse_order_workbook(excel_file):
+    """ユーハウスの発注書を作成する。"""
+    required_columns = [
+        "使用日",
+        "食品名",
+        "単位",
+        "ユーハウス",
+    ]
+
     output_data = []
     all_usage_dates = []
 
@@ -256,7 +433,7 @@ def create_orders_from_vendor_sheets(uploaded_file):
                 supplier = values.iloc[0]
 
         df["発注数量"] = pd.to_numeric(
-            df["総合計"],
+            df["ユーハウス"],
             errors="coerce",
         ).fillna(0)
 
@@ -304,6 +481,7 @@ def create_orders_from_vendor_sheets(uploaded_file):
         ]
 
         order_df = df[columns].copy()
+
         order_df["使用日"] = order_df["使用日"].mask(
             order_df["使用日"].duplicated(),
             "",
@@ -313,7 +491,9 @@ def create_orders_from_vendor_sheets(uploaded_file):
         output_data.append((supplier, order_df))
 
     if not output_data:
-        raise ValueError("発注数量が入力されたデータが見つかりません。")
+        raise ValueError(
+            "ユーハウスに発注数量が入力されたデータがありません。"
+        )
 
     buffer = io.BytesIO()
     used_names = set()
@@ -338,34 +518,55 @@ def create_orders_from_vendor_sheets(uploaded_file):
         for sheet_name, supplier in sheet_map:
             ws = workbook[sheet_name]
             apply_order_style(ws)
-            create_header(ws, supplier)
+            create_header(
+                ws,
+                supplier,
+                "注文書（ユーハウスいわと）",
+            )
 
-            ws["C6"] = "発注数量"
+            ws["C6"] = "ユーハウス"
             ws["J6"] = "備考欄"
 
     token = detect_min_usage_date_token(all_usage_dates)
     filename = (
-        f"発注書_全業者_{token}.xlsx"
+        f"発注書_ユーハウス_{token}.xlsx"
         if token
-        else "発注書_全業者.xlsx"
+        else "発注書_ユーハウス.xlsx"
     )
 
     buffer.seek(0)
     return buffer.read(), filename, len(output_data)
 
 
+def create_two_order_workbooks(uploaded_file):
+    """業者別仕訳表から特養・ユーハウスの2ファイルを作成する。"""
+    excel_file = pd.ExcelFile(uploaded_file)
+
+    if not excel_file.sheet_names:
+        raise ValueError("Excelファイルにシートがありません。")
+
+    tokuyou = create_tokuyou_order_workbook(excel_file)
+    yuhouse = create_yuhouse_order_workbook(excel_file)
+
+    return tokuyou, yuhouse
+
+
 # ------------------------------------------------------------
 # 画面
 # ------------------------------------------------------------
 st.title("業者別発注書作成")
-st.caption("🟠 業者別仕訳表をアップロード　🟢 全シートを一括処理　🔵 発注書を自動作成")
+st.caption(
+    "🟠 業者別仕訳表をアップロード　"
+    "🟢 特養は入所者・職員を統合　"
+    "🔵 ユーハウスは別ファイル"
+)
 
-st.header("📦 全業者の発注書を一括作成")
+st.header("📦 特養・ユーハウスの発注書を一括作成")
 
 st.write(
     "業者別仕訳表にあるすべてのシートを読み込み、"
-    "各シートの「総合計」を発注数量として、"
-    "業者別の発注書シートを作成します。"
+    "特養は「入所者」と「職員」を同じ発注書にまとめます。"
+    "ユーハウスは別の発注書ファイルとして作成します。"
 )
 
 uploaded_file = st.file_uploader(
@@ -375,34 +576,69 @@ uploaded_file = st.file_uploader(
 )
 
 st.info(
-    "各シートに「使用日」「食品名」「総合計」「単位」の列が必要です。"
-    "「コメント」列がある場合は備考欄へ引き継ぎます。"
+    "特養発注書は、C列＝入所者、D列＝単位、E列＝職員です。"
+    "入所者・職員の両方が0の行は除外します。"
 )
 
 if uploaded_file:
     try:
-        if st.button("📦 全業者の発注書を作成する"):
-            data, filename, sheet_count = create_orders_from_vendor_sheets(
+        if st.button("📦 特養・ユーハウスの発注書を作成する"):
+            tokuyou_result, yuhouse_result = create_two_order_workbooks(
                 uploaded_file
             )
 
-            st.session_state["vendor_order_data"] = data
-            st.session_state["vendor_order_filename"] = filename
+            (
+                st.session_state["tokuyou_data"],
+                st.session_state["tokuyou_filename"],
+                st.session_state["tokuyou_sheet_count"],
+            ) = tokuyou_result
+
+            (
+                st.session_state["yuhouse_data"],
+                st.session_state["yuhouse_filename"],
+                st.session_state["yuhouse_sheet_count"],
+            ) = yuhouse_result
 
             st.success(
-                f"{sheet_count}業者分の発注書を作成しました！"
+                "特養とユーハウスの発注書を作成しました！"
             )
 
-        if "vendor_order_data" in st.session_state:
-            st.download_button(
-                "📥 発注書をダウンロード",
-                data=st.session_state["vendor_order_data"],
-                file_name=st.session_state["vendor_order_filename"],
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
-            )
+        if "tokuyou_data" in st.session_state:
+            st.markdown("### 📥 発注書をダウンロード")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.write(
+                    f"**特養（入所者・職員）**  "
+                    f"{st.session_state['tokuyou_sheet_count']}業者"
+                )
+                st.download_button(
+                    "📥 特養発注書",
+                    data=st.session_state["tokuyou_data"],
+                    file_name=st.session_state["tokuyou_filename"],
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "spreadsheetml.sheet"
+                    ),
+                    key="download_tokuyou",
+                )
+
+            with col2:
+                st.write(
+                    f"**ユーハウス**  "
+                    f"{st.session_state['yuhouse_sheet_count']}業者"
+                )
+                st.download_button(
+                    "📥 ユーハウス発注書",
+                    data=st.session_state["yuhouse_data"],
+                    file_name=st.session_state["yuhouse_filename"],
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "spreadsheetml.sheet"
+                    ),
+                    key="download_yuhouse",
+                )
 
     except Exception as error:
         st.error("発注書の作成中にエラーが発生しました。")
