@@ -10,8 +10,21 @@ from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
-from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
-from create_order_form_hokubu import generate_hokubu_order_forms_both_facilities
+# 補助機能は、ファイル不足や内部エラーでアプリ全体が停止しないよう安全に読み込む
+MARUHACHI_IMPORT_ERROR = None
+HOKUBU_IMPORT_ERROR = None
+
+try:
+    from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
+except Exception as exc:
+    generate_maruhachi_order_forms_both_facilities = None
+    MARUHACHI_IMPORT_ERROR = exc
+
+try:
+    from create_order_form_hokubu import generate_hokubu_order_forms_both_facilities
+except Exception as exc:
+    generate_hokubu_order_forms_both_facilities = None
+    HOKUBU_IMPORT_ERROR = exc
 # ------------------------------------------------------------
 # Streamlit 基本設定
 # ------------------------------------------------------------
@@ -1091,7 +1104,10 @@ elif page == "④ 丸八発注書作成":
         )
 
     if btn:
-        if not (kenshu_file and template_file and tag_file):
+        if generate_maruhachi_order_forms_both_facilities is None:
+            st.error("丸八発注書機能を読み込めませんでした。")
+            st.exception(MARUHACHI_IMPORT_ERROR)
+        elif not (kenshu_file and template_file and tag_file):
             st.error("⚠ 3つのファイル（検収簿・テンプレ・コード一覧）をすべて選択してください。")
         else:
             st.success("丸八発注書を作成中です…")
@@ -1168,7 +1184,10 @@ elif page == "⑤ 北部市場発注書作成":
     btn_hokubu = st.button("📦 北部市場発注書を作成", key="btn_hokubu")
 
     if btn_hokubu:
-        if not (hokubu_kenshu and hokubu_template):
+        if generate_hokubu_order_forms_both_facilities is None:
+            st.error("北部市場発注書機能を読み込めませんでした。")
+            st.exception(HOKUBU_IMPORT_ERROR)
+        elif not (hokubu_kenshu and hokubu_template):
             st.error("⚠ 検収簿_加工済 と 北部市場テンプレを選択してください。")
         else:
             st.success("北部市場発注書を作成中です…")
@@ -1206,3 +1225,4 @@ elif page == "⑤ 北部市場発注書作成":
                         data=yuhouse_xlsm.read_bytes(),
                         file_name=yuhouse_xlsm.name,
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                    )
