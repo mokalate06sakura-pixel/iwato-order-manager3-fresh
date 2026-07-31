@@ -208,6 +208,18 @@ hr.soft {
     padding-right: 1rem;
 }
 
+/* 自動ページメニュー上の「app3」をシステム名に置き換える */
+[data-testid="stSidebarNav"] ul li:first-child a span {
+    font-size: 0 !important;
+}
+
+[data-testid="stSidebarNav"] ul li:first-child a span::after {
+    content: "発注・検収サポートシステム";
+    font-size: 14px;
+    color: #5f6570;
+    white-space: normal;
+}
+
 /* サイドバー見出し */
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 {
