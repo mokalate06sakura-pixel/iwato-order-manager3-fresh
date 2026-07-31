@@ -220,64 +220,113 @@ hr.soft {
 [data-testid="stSidebar"] [role="radiogroup"] {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin-top: 0.6rem;
+    gap: 2px;
+    margin-top: 0.35rem;
 }
 
-/* 各メニュー項目の土台 */
+/* 各メニュー項目：献立マン風の細い一覧 */
 [data-testid="stSidebar"] [role="radiogroup"] label {
-    background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
-    border: 1px solid rgba(80, 80, 80, 0.15);
-    border-radius: 12px;
-    padding: 12px 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    background: #fff7fe;
+    border: 1px solid #f28ae8;
+    border-radius: 1px;
+    padding: 7px 9px;
+    box-shadow: none;
     transition: all 0.15s ease-in-out;
     cursor: pointer;
 }
 
+/* 検収簿整形は「検収関連」の水色 */
+[data-testid="stSidebar"] [role="radiogroup"] label:first-of-type {
+    background: #f0fcff;
+    border-color: #52cce8;
+}
+
+/* 2番目の項目の直前に「発注関連」の見出しを表示 */
+[data-testid="stSidebar"] [role="radiogroup"] label:nth-of-type(2) {
+    position: relative;
+    margin-top: 42px;
+}
+
+[data-testid="stSidebar"] [role="radiogroup"] label:nth-of-type(2)::before {
+    content: "▼ 発注関連";
+    position: absolute;
+    top: -40px;
+    left: -1px;
+    width: calc(100% + 2px);
+    box-sizing: border-box;
+    padding: 7px 9px;
+    color: #b600ad;
+    font-size: 16px;
+    font-weight: 900;
+    background: linear-gradient(180deg, #fff0fd 0%, #f47ce9 100%);
+    border: 1px solid #e55ada;
+}
+
 /* ホバー */
 [data-testid="stSidebar"] [role="radiogroup"] label:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px rgba(0,0,0,0.10);
-    border-color: rgba(255, 150, 100, 0.45);
+    transform: none;
+    box-shadow: inset 3px 0 0 rgba(219, 43, 202, 0.55);
+    filter: brightness(0.98);
 }
 
 /* ラベル文字 */
 [data-testid="stSidebar"] [role="radiogroup"] label p {
-    font-size: 16px;
-    font-weight: 800;
-    color: #333333;
+    font-size: 14px;
+    font-weight: 700;
+    color: #4a3548;
     margin: 0;
 }
 
-/* ラジオ丸を少し大きく */
+/* ラジオ丸 */
 [data-testid="stSidebar"] input[type="radio"] {
-    transform: scale(1.15);
-    accent-color: #ff9b50;
+    transform: scale(0.95);
+    accent-color: #ef63df;
 }
 
 /* 選択中の項目 */
 [data-testid="stSidebar"] label:has(input[type="radio"]:checked) {
-    background: linear-gradient(90deg, #ffb36b 0%, #ffd08a 100%);
-    border: 1px solid rgba(220, 120, 40, 0.55);
-    box-shadow: 0 8px 18px rgba(255, 155, 80, 0.22);
+    background: #ffd9fa;
+    border-color: #df39d1;
+    box-shadow: inset 4px 0 0 #df39d1;
 }
 
 [data-testid="stSidebar"] label:has(input[type="radio"]:checked) p {
-    color: #4d2c00;
+    color: #8d087f;
 }
 
-/* サイドバー区切り用の小見出し風 */
+/* 検収関連が選択中のときは水色 */
+[data-testid="stSidebar"] label:first-of-type:has(input[type="radio"]:checked) {
+    background: #c9f5ff;
+    border-color: #24b9db;
+    box-shadow: inset 4px 0 0 #24b9db;
+}
+
+[data-testid="stSidebar"] label:first-of-type:has(input[type="radio"]:checked) p {
+    color: #087b96;
+}
+
+/* サイドバー上部 */
 .sidebar-section-title {
-    display: inline-block;
-    background: #fff3e7;
-    border: 1px solid #f1c79f;
-    color: #7a4a1f;
-    font-weight: 800;
-    border-radius: 999px;
-    padding: 6px 12px;
-    margin-bottom: 0.6rem;
-    font-size: 13px;
+    display: block;
+    background: linear-gradient(180deg, #ffffff 0%, #e9e9e9 100%);
+    border: 1px solid #bdbdbd;
+    color: #333333;
+    font-weight: 900;
+    padding: 7px 9px;
+    margin-bottom: 0.5rem;
+    font-size: 17px;
+}
+
+.menu-group-title-blue {
+    display: block;
+    color: #087b96;
+    font-size: 16px;
+    font-weight: 900;
+    padding: 7px 9px;
+    margin-top: 0.45rem;
+    margin-bottom: 0;
+    background: linear-gradient(180deg, #edfcff 0%, #69d7ed 100%);
+    border: 1px solid #42c5e0;
 }
 </style>
 """
@@ -871,8 +920,14 @@ st.markdown(
 )
 
 with st.sidebar:
-    st.markdown('<div class="sidebar-section-title">ユーザーメニュー</div>', unsafe_allow_html=True)
-    st.markdown("### 📋 メニュー")
+    st.markdown(
+        '<div class="sidebar-section-title">▦ ユーザーメニュー</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="menu-group-title-blue">▼ 検収関連</div>',
+        unsafe_allow_html=True,
+    )
 
     page = st.radio(
         "画面を選択してください",
