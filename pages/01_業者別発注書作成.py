@@ -36,6 +36,18 @@ st.markdown(
         padding-bottom: 3rem;
     }
 
+    /* ページ切り替え後も「app3」を正式なシステム名で表示 */
+    [data-testid="stSidebarNav"] ul li:first-child a span {
+        font-size: 0 !important;
+    }
+
+    [data-testid="stSidebarNav"] ul li:first-child a span::after {
+        content: "発注・検収サポートシステム";
+        font-size: 14px;
+        color: #5f6570;
+        white-space: normal;
+    }
+
     h1 {
         display: inline-block;
         color: #ff7f50 !important;
@@ -478,6 +490,10 @@ if uploaded_file:
                     "spreadsheetml.sheet"
                 ),
             )
+
+    except Exception as error:
+        st.error("発注書の作成中にエラーが発生しました。")
+        st.exception(error)
 
     except Exception as error:
         st.error("発注書の作成中にエラーが発生しました。")
