@@ -12,20 +12,6 @@ from openpyxl.utils import get_column_letter
 # 補助機能は、ファイル不足や内部エラーでアプリ全体が停止しないよう安全に読み込む
 MARUHACHI_IMPORT_ERROR = None
 HOKUBU_IMPORT_ERROR = None
-import io
-import re
-import tempfile
-from pathlib import Path
-from datetime import datetime
-
-import pandas as pd
-import streamlit as st
-from openpyxl.styles import Font, Alignment, Border, Side
-from openpyxl.worksheet.page import PageMargins
-from openpyxl.utils import get_column_letter
-# 補助機能は、ファイル不足や内部エラーでアプリ全体が停止しないよう安全に読み込む
-MARUHACHI_IMPORT_ERROR = None
-HOKUBU_IMPORT_ERROR = None
 
 try:
     from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
@@ -375,15 +361,206 @@ def parse_mmdd(value: str):
         return None
 
 def detect_min_usage_date_token(df, col="使用日"):
+    pass
+
+# ------------------------------------------------------------
+# ①・② 共通 Excel印刷書式
+# A3縦 / 罫線 / 納品日区切り線 / 行高26 / 文字16
+# ------------------------------------------------------------
+def apply_inspection_print_style(ws):
+    # 基本フォント
+    body_font = Font(
+        name="ＭＳ ゴシック",
+        size=16
+    )
+
+    header_font = Font(
+        name="ＭＳ ゴシック",
+        size=16,
+        bold=True
+    )
+
+    # 罫線
+    thin = Side(
+        style="thin",
+        color="000000"
+    )
+
+    medium = Side(
+        style="medium",
+        color="000000"
+    )
+
+    thin_border = Border(
+        left=thin,
+        right=thin,
+        top=thin,
+        bottom=thin
+    )
+
+    # A3縦
+    ws.page_setup.paperSize = ws.PAPERSIZE_A3
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    ws.print_options.horizontalCentered = True
+
+    ws.page_margins = PageMargins(
+        left=0.25,
+        right=0.25,
+        top=0.35,
+        bottom=0.35,
+        header=0.15,
+        footer=0.15
+    )
+
+    # 全セル
+    for row in range(1, ws.max_row + 1):
+        ws.row_dimensions[row].height = 26
+
+        for col in range(1, ws.max_column + 1):
+            cell = ws.cell(
+                row=row,
+                column=col
+            )
+
+            if row == 1:
+                cell.font = header_font
+                cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center",
+                    wrap_text=True
+                )
+            else:
+                cell.font = body_font
+                cell.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=False
+                )
+
+            cell.border = thin_border
+
+    # 見出し名と列番号
+    header_map = {}
+
+    for col in range(1, ws.max_column + 1):
+        value = ws.cell(
+            row=1,
+            column=col
+        ).value
+
+        if value is not None:
+            header_map[str(value).strip()] = col
+
+    # 納品日が変わったら上に太線
+    delivery_col = header_map.get("納品日")
+
+    if delivery_col is not None:
+        previous_value = None
+
+        for row in range(2, ws.max_row + 1):
+            current_value = ws.cell(
+                row=row,
+                column=delivery_col
+            ).value
+
+            current_text = (
+                ""
+                if current_value is None
+                else str(current_value).strip()
+            )
+
+            if row == 2:
+                previous_value = current_text
+                continue
+
+            if current_text != previous_value:
+                for col in range(1, ws.max_column + 1):
+                    cell = ws.cell(
+                        row=row,
+                        column=col
+                    )
+
+                    cell.border = Border(
+                        left=thin,
+                        right=thin,
+                        top=medium,
+                        bottom=thin
+                    )
+
+            previous_value = current_text
+
+    # 列幅
+    width_map = {
+        "納品日": 15,
+        "使用日": 15,
+        "朝昼夕": 11,
+        "仕入先": 24,
+        "食品名": 38,
+        "換算値": 13,
+        "総合計": 13,
+        "単位": 11,
+        "特養入所者": 15,
+        "特養職員": 15,
+        "ユーハウス": 15,
+        "コメント": 28,
+    }
+
+    for header, width in width_map.items():
+        col_num = header_map.get(header)
+
+        if col_num is not None:
+            letter = get_column_letter(col_num)
+            ws.column_dimensions[letter].width = width
+
+    # 食品名は左揃え
+    food_col = header_map.get("食品名")
+
+    if food_col is not None:
+        for row in range(2, ws.max_row + 1):
+            ws.cell(
+                row=row,
+                column=food_col
+            ).alignment = Alignment(
+                horizontal="left",
+                vertical="center",
+                wrap_text=False,
+                shrink_to_fit=True
+            )
+
+    # 印刷範囲
+    ws.print_area = (
+        f"A1:"
+        f"{get_column_letter(ws.max_column)}"
+        f"{ws.max_row}"
+    )
+
+    # 各ページに見出し行を表示
+    ws.print_title_rows = "1:1"
+
+def detect_min_usage_date_token(df, col="使用日"):
     """使用日の最も古い日付を MMDD 形式 '1208' のように返す"""
     if col not in df.columns:
         return ""
-    dt_list = [parse_mmdd(v) for v in df[col]]
-    dt_list = [d for d in dt_list if d is not None]
+
+    dt_list = [
+        parse_mmdd(v)
+        for v in df[col]
+    ]
+
+    dt_list = [
+        d
+        for d in dt_list
+        if d is not None
+    ]
+
     if not dt_list:
         return ""
-    return min(dt_list).strftime("%m%d")
 
+    return min(dt_list).strftime("%m%d")
 
 # ------------------------------------------------------------
 # ① 検収簿整形ロジック（修正版：不要列を削除）
@@ -421,58 +598,106 @@ def format_inspection_workbook(uploaded_file):
     # VBA「EK空行削除_後にF空白へ0」を自動適用
     df = apply_ek_blank_rows_and_f_zero(df)
 
-    # ---- MultiIndex → フラット化 ----
+    # ------------------------------------------------------------
+    # MultiIndex → フラット化
+    # ------------------------------------------------------------
     flat_cols = []
+
     for top, sub in df.columns:
         top = "" if str(top).startswith("Unnamed") else str(top)
         sub = "" if str(sub).startswith("Unnamed") else str(sub)
 
         if top == "":
             flat_cols.append(sub)
+
         elif sub == "":
             flat_cols.append(top)
+
         else:
             flat_cols.append(f"{top}_{sub}")
 
     df.columns = flat_cols
 
-    # F列に相当する「換算値」の空白を確実に0で補完する。
-    # 元Excelの列位置だけでなく、見出し名でも処理することで、
-    # 結合見出しや列構成の違いがあっても出力へ反映させる。
+    # ------------------------------------------------------------
+    # 換算値の空白を0
+    # ------------------------------------------------------------
     if "換算値" in df.columns:
         conversion_blank = df["換算値"].map(_is_blank)
         df.loc[conversion_blank, "換算値"] = 0
 
-    # ---- 欠損補完 ----
+    # ------------------------------------------------------------
+    # 欠損補完
+    # ------------------------------------------------------------
     for col in ["納品日", "使用日", "朝昼夕", "仕入先"]:
         if col in df.columns:
             df[col] = df[col].ffill()
 
-    # ---- 朝昼夕用の並び順 ----
-    order_map = {"朝食": 1, "昼食": 2, "夕食": 3}
-    df["食事順"] = df["朝昼夕"].map(order_map).fillna(0)
+    # ------------------------------------------------------------
+    # 朝昼夕の並び順
+    # ------------------------------------------------------------
+    order_map = {
+        "朝食": 1,
+        "昼食": 2,
+        "夕食": 3,
+    }
 
-    # ---- ソート ----
-    df = df.sort_values(["使用日", "食事順", "食品名"])
+    df["食事順"] = (
+        df["朝昼夕"]
+        .map(order_map)
+        .fillna(0)
+    )
 
     # ------------------------------------------------------------
-    # 🔥 ここが今回の重要修正ポイント
+    # ソート
+    # ------------------------------------------------------------
+    df = df.sort_values(
+        ["使用日", "食事順", "食品名"]
+    )
+
+    # ------------------------------------------------------------
+    # 特養・ユーハウスの元列を検索
     # ------------------------------------------------------------
 
-    # ❶ いわと列名（確実に拾えるように）
-    iwato_in = [c for c in df.columns if "いわと" in c and "入所" in c]
-    iwato_staff = [c for c in df.columns if "いわと" in c and "職員" in c]
-
-    # ❷ ユーハウス列名（部分一致で拾う）
-    yuhouse_in = [
-        c for c in df.columns 
-        if ("ユーハウス" in c or "ユー" in c or "ケアハウス" in c)
-        and "入" in c
+    # 特養入所者
+    iwato_in = [
+        c for c in df.columns
+        if (
+            "いわと" in str(c)
+            and "入所" in str(c)
+            and "職員" not in str(c)
+        )
     ]
 
-    # デバッグ表示（必要なら） print(df.columns)
+    # 特養職員
+    iwato_staff = [
+        c for c in df.columns
+        if (
+            "いわと" in str(c)
+            and "職員" in str(c)
+        )
+    ]
 
-    # ---- 最終的に残す列 ----
+    # ユーハウス
+    yuhouse_in = [
+        c for c in df.columns
+        if (
+            (
+                "ケアハウス" in str(c)
+                or "ユーハウス" in str(c)
+                or "ユー" in str(c)
+            )
+            and (
+                "入所者" in str(c)
+                or "入居者" in str(c)
+                or "入" in str(c)
+            )
+            and "職員" not in str(c)
+        )
+    ]
+
+    # ------------------------------------------------------------
+    # 必要列
+    # ------------------------------------------------------------
     needed_cols = [
         "納品日",
         "使用日",
@@ -484,28 +709,108 @@ def format_inspection_workbook(uploaded_file):
         "単位",
     ]
 
-    # 自動で見つけた列を追加
-    needed_cols += iwato_in[:1]           # I列：いわと入所者
-    needed_cols += iwato_staff[:1]        # J列：いわと職員
-    needed_cols += yuhouse_in[:1]         # L列：ユーハウス入所者
+    if iwato_in:
+        needed_cols.append(iwato_in[0])
 
-    # 存在するものだけ残す
-    needed_cols = [c for c in needed_cols if c in df.columns]
+    if iwato_staff:
+        needed_cols.append(iwato_staff[0])
+
+    if yuhouse_in:
+        needed_cols.append(yuhouse_in[0])
+
+    # 実際に存在する列だけ残す
+    needed_cols = [
+        c for c in needed_cols
+        if c in df.columns
+    ]
 
     df_out = df[needed_cols].copy()
 
-    # Excel出力直前にも再確認し、換算値の空白を残さない
-    if "換算値" in df_out.columns:
-        conversion_blank = df_out["換算値"].map(_is_blank)
-        df_out.loc[conversion_blank, "換算値"] = 0
+    # ------------------------------------------------------------
+    # ★列名を統一
+    # ------------------------------------------------------------
+    rename_map = {}
 
-    # ---- 出力 ----
+    if iwato_in:
+        rename_map[iwato_in[0]] = "特養入所者"
+
+    if iwato_staff:
+        rename_map[iwato_staff[0]] = "特養職員"
+
+    if yuhouse_in:
+        rename_map[yuhouse_in[0]] = "ユーハウス"
+
+    df_out = df_out.rename(
+        columns=rename_map
+    )
+
+    # ------------------------------------------------------------
+    # 必須の数量列が取得できたか確認
+    # ------------------------------------------------------------
+    missing_facility_cols = []
+
+    if "特養入所者" not in df_out.columns:
+        missing_facility_cols.append("特養入所者")
+
+    if "特養職員" not in df_out.columns:
+        missing_facility_cols.append("特養職員")
+
+    if "ユーハウス" not in df_out.columns:
+        missing_facility_cols.append("ユーハウス")
+
+    if missing_facility_cols:
+        raise ValueError(
+            "検収簿から次の数量列を取得できませんでした："
+            + "、".join(missing_facility_cols)
+            + "。元の検収記録簿の見出しを確認してください。"
+        )
+
+    # ------------------------------------------------------------
+    # 換算値を再確認
+    # ------------------------------------------------------------
+    if "換算値" in df_out.columns:
+        conversion_blank = (
+            df_out["換算値"]
+            .map(_is_blank)
+        )
+
+        df_out.loc[
+            conversion_blank,
+            "換算値"
+        ] = 0
+
+    # ------------------------------------------------------------
+    # Excel出力
+    # ------------------------------------------------------------
     buffer = io.BytesIO()
-    df_out.to_excel(buffer, index=False)
+
+    with pd.ExcelWriter(
+        buffer,
+        engine="openpyxl"
+    ) as writer:
+
+        df_out.to_excel(
+            writer,
+            index=False,
+            sheet_name="検収簿"
+        )
+
+        ws = writer.book["検収簿"]
+
+        apply_inspection_print_style(ws)
+
     buffer.seek(0)
 
-    token = detect_min_usage_date_token(df_out, "使用日")
-    fname = f"検収簿_加工済_{token}.xlsx" if token else "検収簿_加工済.xlsx"
+    token = detect_min_usage_date_token(
+        df_out,
+        "使用日"
+    )
+
+    fname = (
+        f"検収簿_加工済_{token}.xlsx"
+        if token
+        else "検収簿_加工済.xlsx"
+    )
 
     return buffer.read(), fname
 
@@ -590,40 +895,11 @@ def create_vendor_journal_workbook(uploaded_file):
             vendor_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
             ws = writer.book[sheet_name]
-
-            # A3・横向き印刷設定
-            ws.page_setup.paperSize = ws.PAPERSIZE_A3
-            ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
-            ws.sheet_properties.pageSetUpPr.fitToPage = True
-            ws.page_setup.fitToWidth = 1
-            ws.page_setup.fitToHeight = 0
-            ws.print_options.horizontalCentered = True
-            ws.freeze_panes = "B2"
-
-            # A列はデータを保持したまま非表示にする
-            ws.column_dimensions["A"].hidden = True
-
-            # 印刷範囲
-            ws.print_area = ws.dimensions
-            ws.page_margins = PageMargins(
-                left=0.25, right=0.25, top=0.4, bottom=0.4,
-                header=0.2, footer=0.2
-            )
-
-            # 見出しと列幅
-            for cell in ws[1]:
-                cell.font = Font(name="ＭＳ ゴシック", size=11, bold=True)
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-            for column_cells in ws.columns:
-                letter = get_column_letter(column_cells[0].column)
-                max_length = max(
-                    (len(str(cell.value)) if cell.value is not None else 0)
-                    for cell in column_cells
-                )
-                ws.column_dimensions[letter].width = min(max(max_length + 2, 10), 32)
-
-            ws.row_dimensions[1].height = 32
+# --------------------------------------------------------
+# ①・②共通の印刷書式を適用
+# --------------------------------------------------------
+    apply_inspection_print_style(ws)
+           
 
     buffer.seek(0)
     token = detect_min_usage_date_token(df, "使用日")
@@ -780,46 +1056,79 @@ def create_header_yuhouse(ws, supplier):
 
 
 # ------------------------------------------------------------
-# ③ 注文書作成（特養 / ユーハウス 共通・安定版）
+# ③ 注文書作成
+# 特養 / ユーハウス
 # ------------------------------------------------------------
 def create_order_workbook(uploaded_file, order_type):
+
     df = pd.read_excel(uploaded_file)
 
     # ------------------------------------------------------------
-    # 必須列チェック
+    # 基本必須列チェック
     # ------------------------------------------------------------
-    required_cols = ["使用日", "仕入先", "食品名", "単位"]
+    required_cols = [
+        "使用日",
+        "仕入先",
+        "食品名",
+        "単位",
+    ]
 
-    missing_cols = [c for c in required_cols if c not in df.columns]
+    missing_cols = [
+        c for c in required_cols
+        if c not in df.columns
+    ]
+
     if missing_cols:
         raise ValueError(
-            "必要な列が見つかりません: "
+            "必要な列が見つかりません："
             + "、".join(missing_cols)
-            + "。検収簿（加工済）のファイルを確認してください。"
+            + "。①検収簿整形で作成した"
+              "加工済み検収簿を使用してください。"
         )
 
     # ------------------------------------------------------------
     # 欠損補完
     # ------------------------------------------------------------
-    for c in ["使用日", "仕入先", "食品名", "単位"]:
-        if c in df.columns:
-            df[c] = df[c].ffill()
+    for c in [
+        "使用日",
+        "仕入先",
+        "食品名",
+        "単位",
+    ]:
+        df[c] = df[c].ffill()
 
-    df["使用日"] = df["使用日"].astype(str)
+    df["使用日"] = (
+        df["使用日"]
+        .astype(str)
+    )
 
     # ------------------------------------------------------------
-    # 🔶 特養（いわと）
+    # 特養
     # ------------------------------------------------------------
     if "特養" in order_type:
 
-        raw_qty = "介護老人福祉施設いわと_入所者"
-        raw_staff = "介護老人福祉施設いわと_職員"
+        raw_qty = "特養入所者"
+        raw_staff = "特養職員"
+
+        missing_tokuyou = []
 
         if raw_qty not in df.columns:
-            df[raw_qty] = 0
+            missing_tokuyou.append(
+                "特養入所者"
+            )
 
         if raw_staff not in df.columns:
-            df[raw_staff] = 0
+            missing_tokuyou.append(
+                "特養職員"
+            )
+
+        if missing_tokuyou:
+            raise ValueError(
+                "特養の数量列が見つかりません："
+                + "、".join(missing_tokuyou)
+                + "。①検収簿整形で作成した"
+                  "最新の加工済み検収簿を使用してください。"
+            )
 
         df[raw_qty] = pd.to_numeric(
             df[raw_qty],
@@ -832,37 +1141,24 @@ def create_order_workbook(uploaded_file, order_type):
         ).fillna(0)
 
     # ------------------------------------------------------------
-    # 🔷 ユーハウス
+    # ユーハウス
     # ------------------------------------------------------------
     else:
 
-        cand_cols = [
-            c for c in df.columns
-            if (
-                "ケアハウス" in str(c)
-                or "ユーハウス" in str(c)
-                or "ユー" in str(c)
-            )
-            and (
-                "入所者" in str(c)
-                or "入居者" in str(c)
-                or "入" in str(c)
-            )
-            and "職員" not in str(c)
-        ]
+        raw_qty = "ユーハウス"
+        raw_staff = None
 
-        if not cand_cols:
-            raw_qty = "ケアハウス入居者"
-            df[raw_qty] = 0
-        else:
-            raw_qty = cand_cols[0]
+        if raw_qty not in df.columns:
+            raise ValueError(
+                "『ユーハウス』列が見つかりません。"
+                "①検収簿整形で作成した"
+                "最新の加工済み検収簿を使用してください。"
+            )
 
         df[raw_qty] = pd.to_numeric(
             df[raw_qty],
             errors="coerce"
         ).fillna(0)
-
-        raw_staff = None
 
     # ------------------------------------------------------------
     # 検収用空欄
@@ -881,21 +1177,34 @@ def create_order_workbook(uploaded_file, order_type):
         if c not in df.columns:
             df[c] = ""
 
-    # 納品日は常に空欄
+    # 納品日は空欄
     df["納品日"] = ""
 
     # ------------------------------------------------------------
     # 仕入先整理
     # ------------------------------------------------------------
-    df["仕入先"] = df["仕入先"].fillna("").astype(str).str.strip()
+    df["仕入先"] = (
+        df["仕入先"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
-    # 空白仕入先は注文書対象外
-    df = df[df["仕入先"] != ""].copy()
+    # 仕入先空欄は除外
+    df = df[
+        df["仕入先"] != ""
+    ].copy()
 
-    suppliers = df["仕入先"].drop_duplicates().tolist()
+    suppliers = (
+        df["仕入先"]
+        .drop_duplicates()
+        .tolist()
+    )
 
     if not suppliers:
-        raise ValueError("仕入先が見つかりません。")
+        raise ValueError(
+            "仕入先が見つかりません。"
+        )
 
     # ------------------------------------------------------------
     # Excel出力
@@ -903,19 +1212,33 @@ def create_order_workbook(uploaded_file, order_type):
     buffer = io.BytesIO()
 
     used_sheet_names = set()
+    created_sheet_count = 0
 
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+    with pd.ExcelWriter(
+        buffer,
+        engine="openpyxl"
+    ) as writer:
 
         for supplier in suppliers:
 
-            sub = df[df["仕入先"] == supplier].copy()
+            sub = df[
+                df["仕入先"] == supplier
+            ].copy()
 
-            # 使用日を日付として並び替える
-            sub["使用日_dt"] = sub["使用日"].apply(parse_mmdd)
+            # ----------------------------------------------------
+            # 使用日で並び替え
+            # ----------------------------------------------------
+            sub["使用日_dt"] = (
+                sub["使用日"]
+                .apply(parse_mmdd)
+            )
 
             sub = sub.sort_values(
-                ["使用日_dt", "食品名"],
-                na_position="last"
+                [
+                    "使用日_dt",
+                    "食品名",
+                ],
+                na_position="last",
             )
 
             # ----------------------------------------------------
@@ -923,17 +1246,18 @@ def create_order_workbook(uploaded_file, order_type):
             # ----------------------------------------------------
             if "特養" in order_type:
 
+                # 加工済み検収簿では
+                # 「特養入所者」「特養職員」を使用
                 sub = sub.rename(
                     columns={
-                        raw_qty: "入所者",
-                        raw_staff: "職員",
+                        "特養入所者": "入所者",
+                        "特養職員": "職員",
                     }
                 )
 
                 qty_label = "入所者"
                 staff_label = "職員"
 
-                # 数値化
                 qty_values = pd.to_numeric(
                     sub[qty_label],
                     errors="coerce"
@@ -945,13 +1269,17 @@ def create_order_workbook(uploaded_file, order_type):
                 ).fillna(0)
 
                 # ------------------------------------------------
-                # ★重要
-                # 入所者または職員のどちらかに数量があれば残す
+                # 入所者または職員の
+                # どちらかに数量があれば残す
                 # ------------------------------------------------
                 sub = sub.loc[
                     (qty_values != 0)
-                    | (staff_values != 0)
+                    |
+                    (staff_values != 0)
                 ].copy()
+
+                if sub.empty:
+                    continue
 
                 # 再計算
                 qty_values = pd.to_numeric(
@@ -964,9 +1292,16 @@ def create_order_workbook(uploaded_file, order_type):
                     errors="coerce"
                 ).fillna(0)
 
-                # 0は空欄表示
-                sub[qty_label] = sub[qty_label].astype(object)
-                sub[staff_label] = sub[staff_label].astype(object)
+                # 0は注文書では空欄
+                sub[qty_label] = (
+                    sub[qty_label]
+                    .astype(object)
+                )
+
+                sub[staff_label] = (
+                    sub[staff_label]
+                    .astype(object)
+                )
 
                 sub.loc[
                     qty_values == 0,
@@ -983,13 +1318,19 @@ def create_order_workbook(uploaded_file, order_type):
             # ----------------------------------------------------
             else:
 
+                # 加工済み検収簿の
+                # 「ユーハウス」を使用
                 sub = sub.rename(
                     columns={
-                        raw_qty: "ユーハウス入居者"
+                        "ユーハウス":
+                        "ユーハウス入居者"
                     }
                 )
 
-                qty_label = "ユーハウス入居者"
+                qty_label = (
+                    "ユーハウス入居者"
+                )
+
                 staff_label = None
 
                 qty_values = pd.to_numeric(
@@ -997,19 +1338,16 @@ def create_order_workbook(uploaded_file, order_type):
                     errors="coerce"
                 ).fillna(0)
 
-                # 数量0は削除
+                # 数量0は除外
                 sub = sub.loc[
                     qty_values != 0
                 ].copy()
 
-            # ----------------------------------------------------
-            # データが0件の業者はシートを作らない
-            # ----------------------------------------------------
-            if sub.empty:
-                continue
+                if sub.empty:
+                    continue
 
             # ----------------------------------------------------
-            # 列順
+            # 出力列
             # ----------------------------------------------------
             col_order = [
                 "使用日",
@@ -1019,7 +1357,9 @@ def create_order_workbook(uploaded_file, order_type):
             ]
 
             if staff_label:
-                col_order.append(staff_label)
+                col_order.append(
+                    staff_label
+                )
 
             col_order += [
                 "鮮度",
@@ -1032,23 +1372,27 @@ def create_order_workbook(uploaded_file, order_type):
                 "検収者",
             ]
 
-            # 不足列補完
             for c in col_order:
                 if c not in sub.columns:
                     sub[c] = ""
 
-            sub = sub[col_order].copy()
+            sub = sub[
+                col_order
+            ].copy()
 
             # ----------------------------------------------------
-            # 同じ使用日は最初の行のみ表示
+            # 同じ使用日は最初だけ表示
             # ----------------------------------------------------
-            sub["使用日"] = sub["使用日"].mask(
-                sub["使用日"].duplicated(),
-                ""
+            sub["使用日"] = (
+                sub["使用日"].mask(
+                    sub["使用日"]
+                    .duplicated(),
+                    ""
+                )
             )
 
             # ----------------------------------------------------
-            # Excelシート名の禁止文字対策
+            # Excelシート名
             # ----------------------------------------------------
             sheet_name = re.sub(
                 r'[\\/*?:\[\]]',
@@ -1056,23 +1400,38 @@ def create_order_workbook(uploaded_file, order_type):
                 str(supplier)
             )
 
-            sheet_name = sheet_name[:31]
+            sheet_name = (
+                sheet_name[:31]
+                or "仕入先"
+            )
 
-            base_sheet_name = sheet_name
+            base_sheet_name = (
+                sheet_name
+            )
+
             index = 2
 
-            while sheet_name in used_sheet_names:
+            while (
+                sheet_name
+                in used_sheet_names
+            ):
                 suffix = f"_{index}"
+
                 sheet_name = (
-                    base_sheet_name[:31 - len(suffix)]
+                    base_sheet_name[
+                        :31 - len(suffix)
+                    ]
                     + suffix
                 )
+
                 index += 1
 
-            used_sheet_names.add(sheet_name)
+            used_sheet_names.add(
+                sheet_name
+            )
 
             # ----------------------------------------------------
-            # Excel書き込み
+            # Excelへ書き込み
             # ----------------------------------------------------
             sub.to_excel(
                 writer,
@@ -1081,36 +1440,49 @@ def create_order_workbook(uploaded_file, order_type):
                 startrow=5,
             )
 
-            ws = writer.book[sheet_name]
+            created_sheet_count += 1
+
+            ws = writer.book[
+                sheet_name
+            ]
 
             apply_order_style(
                 ws,
-                is_tokuyou="特養" in order_type
+                is_tokuyou=(
+                    "特養"
+                    in order_type
+                ),
             )
 
+            # ----------------------------------------------------
+            # ヘッダー
+            # ----------------------------------------------------
             if "特養" in order_type:
+
                 create_header_iwato(
                     ws,
                     supplier
                 )
 
             else:
+
                 create_header_yuhouse(
                     ws,
                     supplier
                 )
 
-                ws["C6"] = "ユーハウス入居者"
+                ws["C6"] = (
+                    "ユーハウス入居者"
+                )
 
-    # ------------------------------------------------------------
-    # シートが1枚もできなかった場合
-    # ------------------------------------------------------------
-    buffer.seek(0)
-
-    if buffer.getbuffer().nbytes == 0:
-        raise ValueError(
-            "注文数量のあるデータが見つかりませんでした。"
-        )
+        # --------------------------------------------------------
+        # 数量ありのシートが0件
+        # --------------------------------------------------------
+        if created_sheet_count == 0:
+            raise ValueError(
+                "注文数量が入力されている"
+                "データが見つかりませんでした。"
+            )
 
     # ------------------------------------------------------------
     # ファイル名
@@ -1121,14 +1493,24 @@ def create_order_workbook(uploaded_file, order_type):
     )
 
     if "特養" in order_type:
-        base_name = "注文書_いわと"
+        base_name = (
+            "注文書_いわと"
+        )
     else:
-        base_name = "注文書_ユーハウス"
+        base_name = (
+            "注文書_ユーハウス"
+        )
 
     if token:
-        fname = f"{base_name}_{token}.xlsx"
+        fname = (
+            f"{base_name}_{token}.xlsx"
+        )
     else:
-        fname = f"{base_name}.xlsx"
+        fname = (
+            f"{base_name}.xlsx"
+        )
+
+    buffer.seek(0)
 
     return buffer.read(), fname
 
@@ -1219,7 +1601,7 @@ if page == "① 検収簿整形":
                    "officedocument.spreadsheetml.sheet"
                 ),
                 key="download_inspection",
-                on_click="ignore",
+                
                 use_container_width=True,
             )
 # ------------------------------------------------------------
@@ -1269,7 +1651,7 @@ elif page == "② 業者別仕訳表":
                        "officedocument.spreadsheetml.sheet"
                     ),
                     key="download_vendor_journal",
-                    on_click="ignore",
+                    
                     use_container_width=True,
                 )
 
@@ -1416,17 +1798,13 @@ elif page == "③ 注文書作成":
         ):
 
             st.download_button(
-                label="📥 注文書ファイルをダウンロード",
-                data=st.session_state["order_data"],
-                file_name=st.session_state["order_fname"],
-                mime=(
-                    "application/vnd.openxmlformats-"
-                    "officedocument.spreadsheetml.sheet"
-                ),
-                key="download_order",
-                on_click="ignore",
-                use_container_width=True,
-            )
+            label="📥 注文書ファイルをダウンロード",
+            data=st.session_state["order_data"],
+            file_name=st.session_state["order_fname"],
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_order",
+            use_container_width=True,
+        )
 
 # ------------------------------------------------------------
 # ④ 丸八発注書作成
@@ -1549,7 +1927,6 @@ elif page == "④ 丸八発注書作成":
                        file_name=tokuyou_xlsm.name,
                        mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                        key="download_maruhachi_tokuyou",
-                       on_click="ignore",
                     )
                 with dcol2:
                     st.download_button(
@@ -1558,7 +1935,6 @@ elif page == "④ 丸八発注書作成":
                         file_name=yuhouse_xlsm.name,
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                         key="download_maruhachi_yuhouse",
-                        on_click="ignore",
                     )
 
 # ------------------------------------------------------------
@@ -1629,7 +2005,7 @@ elif page == "⑤ 北部市場発注書作成":
                         file_name=tokuyou_xlsm.name,
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                         key="download_hokubu_tokuyou",
-                        on_click="ignore",
+                    
                     )
                 with c2:
                     st.download_button(
@@ -1638,5 +2014,4 @@ elif page == "⑤ 北部市場発注書作成":
                         file_name=yuhouse_xlsm.name,
                         mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                         key="download_hokubu_yuhouse",
-                        on_click="ignore",
                     )
