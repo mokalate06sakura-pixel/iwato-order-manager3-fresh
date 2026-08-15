@@ -103,10 +103,46 @@ def load_tag_mapping(tag_xlsm_path: str | Path) -> Dict[str, Tuple[str, str, str
 
 def _read_kenshu(kenshu_xlsx_path: str | Path) -> pd.DataFrame:
     df = pd.read_excel(Path(kenshu_xlsx_path))
-    df = df[df[COL_SUPPLIER].astype(str) == SUPPLIER_NAME].copy()
-    df = df[df[COL_USE_DATE].notna()].copy()
-    return df
 
+    required_cols = [
+        COL_SUPPLIER,
+        COL_USE_DATE,
+        COL_FOOD_NAME,
+        COL_SPEC,
+    ]
+
+    missing_cols = [
+        c for c in required_cols
+        if c not in df.columns
+    ]
+
+    if missing_cols:
+        raise KeyError(
+            "加工済み検収簿に必要な列が見つかりません："
+            + "、".join(missing_cols)
+        )
+
+    df[COL_SUPPLIER] = (
+        df[COL_SUPPLIER]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    df = df[
+        df[COL_SUPPLIER] == SUPPLIER_NAME
+    ].copy()
+
+    df = df[
+        df[COL_USE_DATE].notna()
+    ].copy()
+
+    if df.empty:
+        raise ValueError(
+            "丸八ヒロタのデータが見つかりません。"
+        )
+
+    return df
 
 def _build_fixed_row_index(ws: Worksheet) -> Dict[str, int]:
     idx: Dict[str, int] = {}
@@ -223,15 +259,37 @@ def generate_maruhachi_order_workbook(
 
     df = _read_kenshu(kenshu_xlsx_path)
 
+    # ------------------------------------------------------------
+    # ①検収簿整形後の統一列名を使用
+    # ------------------------------------------------------------
     if facility_mode == "tokuyou":
-        col_res = find_col_by_keywords(df, ["介護老人福祉施設いわと", "入所者"])
-        col_staff = find_col_by_keywords(df, ["介護老人福祉施設いわと", "職員"])
+        col_res = "特養入所者"
+        col_staff = "特養職員"
+
+        missing_cols = []
+
+        if col_res not in df.columns:
+            missing_cols.append(col_res)
+
+        if col_staff not in df.columns:
+            missing_cols.append(col_staff)
+
+        if missing_cols:
+            raise KeyError(
+                "丸八発注書作成に必要な列が見つかりません："
+                + "、".join(missing_cols)
+                + "。①検収簿整形で作成した最新の加工済み検収簿を使用してください。"
+            )
+
     else:
-        try:
-            col_res = find_col_by_keywords(df, ["ケアハウス", "入所者"])
-        except KeyError:
-            col_res = find_col_by_keywords(df, ["ユーハウス", "入所者"])
+        col_res = "ユーハウス"
         col_staff = None
+
+        if col_res not in df.columns:
+            raise KeyError(
+                "『ユーハウス』列が見つかりません。"
+                "①検収簿整形で作成した最新の加工済み検収簿を使用してください。"
+            )
 
     tag_map = load_tag_mapping(tag_xlsm_path)
 
