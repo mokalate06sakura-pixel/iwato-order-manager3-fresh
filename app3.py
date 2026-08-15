@@ -29,320 +29,82 @@ except Exception as exc:
 # ------------------------------------------------------------
 st.set_page_config(page_title="発注・検収サポートシステム", layout="wide")
 
+# ------------------------------------------------------------
+# Streamlit 安定版テーマ
+# 独自HTML・内部DOM依存をできるだけ減らす
+# ------------------------------------------------------------
 def apply_cute_theme():
-    st.markdown("""
-    <style>
-    /* 全体背景 */
-    .stApp {
-        background: linear-gradient(180deg, #FFF7FB 0%, #F7FAFF 100%);
-    }
+    st.markdown(
+        """
+        <style>
 
-    /* ページ横幅を少し締める（読みやすい） */
-    .block-container {
-        padding-top: 2rem;
-        max-width: 1000px;
-    }
+        /* 全体 */
+        .stApp {
+            background: linear-gradient(
+                180deg,
+                #FFF7FB 0%,
+                #F7FAFF 100%
+            );
+        }
 
-    /* タイトルをかわいく */
-    h1, h2, h3 {
-        letter-spacing: 0.02em;
-    }
-    h1 {
-        font-weight: 800;
-        color: #6B4E71;
-    }
+        /* メイン領域 */
+        .block-container {
+            padding-top: 1.8rem;
+            padding-bottom: 2rem;
+            max-width: 1050px;
+        }
 
-    /* カード風コンテナ */
-    .cute-card {
-        background: rgba(255,255,255,0.85);
-        border: 1px solid rgba(255, 192, 203, 0.35);
-        border-radius: 18px;
-        padding: 18px 18px 10px 18px;
-        box-shadow: 0 10px 30px rgba(107, 78, 113, 0.08);
-        backdrop-filter: blur(6px);
-        margin-bottom: 14px;
-    }
-    .cute-label {
-        font-weight: 700;
-        color: #6B4E71;
-        margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .cute-hint {
-        color: rgba(107,78,113,0.7);
-        font-size: 0.92rem;
-        margin-bottom: 10px;
-    }
+        /* 見出し */
+        h1 {
+            color: #6B4E71;
+            font-weight: 800;
+        }
 
-    /* file_uploader をカードっぽく */
-    [data-testid="stFileUploader"] {
-        background: rgba(255,255,255,0.6);
-        border: 1px dashed rgba(107,78,113,0.25);
-        border-radius: 14px;
-        padding: 12px;
-    }
+        h2, h3 {
+            color: #59445E;
+            font-weight: 750;
+        }
 
-    /* ボタンをぷっくり可愛く */
-    .stButton > button {
-        background: linear-gradient(90deg, #FFB6C1 0%, #C7B3FF 100%);
-        color: white;
-        border: 0;
-        border-radius: 999px;
-        padding: 0.70rem 1.2rem;
-        font-weight: 800;
-        box-shadow: 0 10px 20px rgba(199, 179, 255, 0.25);
-        transition: transform .08s ease-in-out, box-shadow .08s ease-in-out;
-        width: 100%;
-    }
-    .stButton > button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 14px 24px rgba(199, 179, 255, 0.30);
-    }
-    .stButton > button:active {
-        transform: translateY(1px);
-        box-shadow: 0 8px 14px rgba(199, 179, 255, 0.20);
-    }
+        /* ボタン */
+        .stButton > button {
+            border-radius: 12px;
+            font-weight: 700;
+            min-height: 46px;
+        }
 
-    /* 成功・エラー表示をやさしく */
-    [data-testid="stAlert"] {
-        border-radius: 14px;
-        border: 1px solid rgba(107,78,113,0.15);
-    }
+        /* ダウンロードボタン */
+        [data-testid="stDownloadButton"] button {
+            border-radius: 12px;
+            font-weight: 700;
+            min-height: 46px;
+        }
 
-    /* 区切り線 */
-    hr {
-        border: none;
-        height: 1px;
-        background: rgba(107,78,113,0.15);
-        margin: 18px 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+        /* ファイルアップロード */
+        [data-testid="stFileUploader"] {
+            border-radius: 12px;
+        }
+
+        /* 通知 */
+        [data-testid="stAlert"] {
+            border-radius: 12px;
+        }
+
+        /* サイドバー */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(
+                180deg,
+                #F8F7F5 0%,
+                #F0EDEA 100%
+            );
+        }
+
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 apply_cute_theme()
-# ------------------------------------------------------------
-# 献ダテマン風 ゆるかわスタイル
-# ------------------------------------------------------------
-CUSTOM_CSS = """
-<style>
-body {
-    background-color: #fffdf8;
-}
-.main {
-    background-image: linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px),
-                      linear-gradient(180deg, rgba(0,0,0,0.03) 1px, transparent 1px);
-    background-size: 24px 24px;
-}
-.app-title {
-    font-size: 34px;
-    font-weight: bold;
-    color: #ff7f50;
-    padding: 0.3rem 1.4rem;
-    display: inline-block;
-    border-radius: 999px;
-    background: #fff0e6;
-    border: 2px solid #ffa76b;
-}
-.subtitle-pill {
-    display: inline-block;
-    padding: 0.25rem 1rem;
-    border-radius: 999px;
-    font-size: 13px;
-    font-weight: 600;
-    margin-right: 0.5rem;
-    color: white;
-}
-.sub-orange { background: #ff9b50; }
-.sub-green  { background: #5cb85c; }
-.sub-blue   { background: #5bc0de; }
-
-.feature-card {
-    background: white;
-    border-radius: 18px;
-    padding: 1.2rem 1.5rem;
-    margin-bottom: 1.4rem;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.06);
-    border: 1px solid #f2e4d5;
-}
-.feature-title {
-    font-weight: bold;
-    font-size: 18px;
-    margin-bottom: 0.3rem;
-    color: #444;
-}
-.feature-sub {
-    font-size: 12px;
-    color: #777;
-    margin-bottom: 0.7rem;
-}
-.small-note {
-    font-size: 11px;
-    color: #777;
-    margin-top: 0.4rem;
-}
-.btn-cute {
-    background: #ffb27a !important;
-    color: white !important;
-    font-weight: bold !important;
-    border-radius: 10px !important;
-}
-hr.soft {
-    border: none;
-    border-top: 1px dashed #e0cbb0;
-    margin: 0.4rem 0 0.8rem 0;
-}
-
-/* ---------------------------
-   サイドバー: 献ダテマン風
----------------------------- */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #f7f5f2 0%, #efece6 100%);
-    border-right: 1px solid rgba(120, 120, 120, 0.15);
-}
-
-[data-testid="stSidebar"] .block-container {
-    padding-top: 1.2rem;
-    padding-left: 1rem;
-    padding-right: 1rem;
-}
-
-/* 自動ページメニュー上の「app3」をシステム名に置き換える */
-[data-testid="stSidebarNav"] ul li:first-child a span {
-    font-size: 0 !important;
-}
-
-[data-testid="stSidebarNav"] ul li:first-child a span::after {
-    content: "発注・検収サポートシステム";
-    font-size: 14px;
-    color: #5f6570;
-    white-space: normal;
-}
-
-/* サイドバー見出し */
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    color: #4a4a4a;
-    font-weight: 800;
-    margin-bottom: 0.6rem;
-}
-
-/* radio 全体 */
-[data-testid="stSidebar"] [role="radiogroup"] {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: 0.35rem;
-}
-
-/* 各メニュー項目：献立マン風の細い一覧 */
-[data-testid="stSidebar"] [role="radiogroup"] label {
-    background: #fff7fe;
-    border: 1px solid #f28ae8;
-    border-radius: 1px;
-    padding: 7px 9px;
-    box-shadow: none;
-    transition: all 0.15s ease-in-out;
-    cursor: pointer;
-}
-
-/* 検収簿整形は「検収関連」の水色 */
-[data-testid="stSidebar"] [role="radiogroup"] label:first-of-type {
-    background: #f0fcff;
-    border-color: #52cce8;
-}
-
-/* 2番目の項目の直前に「発注関連」の見出しを表示 */
-[data-testid="stSidebar"] [role="radiogroup"] label:nth-of-type(2) {
-    position: relative;
-    margin-top: 42px;
-}
-
-[data-testid="stSidebar"] [role="radiogroup"] label:nth-of-type(2)::before {
-    content: "▼ 発注関連";
-    position: absolute;
-    top: -40px;
-    left: -1px;
-    width: calc(100% + 2px);
-    box-sizing: border-box;
-    padding: 7px 9px;
-    color: #b600ad;
-    font-size: 16px;
-    font-weight: 900;
-    background: linear-gradient(180deg, #fff0fd 0%, #f47ce9 100%);
-    border: 1px solid #e55ada;
-}
-
-/* ホバー */
-[data-testid="stSidebar"] [role="radiogroup"] label:hover {
-    transform: none;
-    box-shadow: inset 3px 0 0 rgba(219, 43, 202, 0.55);
-    filter: brightness(0.98);
-}
-
-/* ラベル文字 */
-[data-testid="stSidebar"] [role="radiogroup"] label p {
-    font-size: 14px;
-    font-weight: 700;
-    color: #4a3548;
-    margin: 0;
-}
-
-/* ラジオ丸 */
-[data-testid="stSidebar"] input[type="radio"] {
-    transform: scale(0.95);
-    accent-color: #ef63df;
-}
-
-/* 選択中の項目 */
-[data-testid="stSidebar"] label:has(input[type="radio"]:checked) {
-    background: #ffd9fa;
-    border-color: #df39d1;
-    box-shadow: inset 4px 0 0 #df39d1;
-}
-
-[data-testid="stSidebar"] label:has(input[type="radio"]:checked) p {
-    color: #8d087f;
-}
-
-/* 検収関連が選択中のときは水色 */
-[data-testid="stSidebar"] label:first-of-type:has(input[type="radio"]:checked) {
-    background: #c9f5ff;
-    border-color: #24b9db;
-    box-shadow: inset 4px 0 0 #24b9db;
-}
-
-[data-testid="stSidebar"] label:first-of-type:has(input[type="radio"]:checked) p {
-    color: #087b96;
-}
-
-/* サイドバー上部 */
-.sidebar-section-title {
-    display: block;
-    background: linear-gradient(180deg, #ffffff 0%, #e9e9e9 100%);
-    border: 1px solid #bdbdbd;
-    color: #333333;
-    font-weight: 900;
-    padding: 7px 9px;
-    margin-bottom: 0.5rem;
-    font-size: 17px;
-}
-
-.menu-group-title-blue {
-    display: block;
-    color: #087b96;
-    font-size: 16px;
-    font-weight: 900;
-    padding: 7px 9px;
-    margin-top: 0.45rem;
-    margin-bottom: 0;
-    background: linear-gradient(180deg, #edfcff 0%, #69d7ed 100%);
-    border: 1px solid #42c5e0;
-}
-</style>
-"""
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # ------------------------------------------------------------
 # 共通ユーティリティ
@@ -1941,77 +1703,234 @@ elif page == "④ 丸八発注書作成":
 # ⑤ 北部市場発注書作成
 # ------------------------------------------------------------
 elif page == "⑤ 北部市場発注書作成":
-    st.markdown(
-        """
-<div class="feature-card">
-  <div class="feature-title">⑤ 北部市場発注書を作成</div>
-  <div class="feature-sub">
-    検収簿_加工済と北部市場発注書テンプレを使って<br>
-    特養用・ユーハウス用の発注書を自動作成します。
-  </div>
-  <hr class="soft"/>
-</div>
-        """,
-        unsafe_allow_html=True,
+
+    st.subheader(
+        "⑤ 📦 北部市場発注書を作成"
     )
 
+    st.write(
+        "検収簿_加工済と北部市場発注書テンプレートを使って、"
+        "特養用・ユーハウス用の発注書を自動作成します。"
+    )
+
+    st.caption(
+        "※ 検収簿_加工済 と 北部市場発注書テンプレートの"
+        "2つのファイルを選択してください。"
+    )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # ファイル選択
+    # --------------------------------------------------------
     hokubu_kenshu = st.file_uploader(
-        "検収簿_加工済（xlsx）",
+        "📄 検収簿_加工済（xlsx）",
         type=["xlsx"],
-        key="hokubu_kenshu"
+        key="hokubu_kenshu",
     )
 
     hokubu_template = st.file_uploader(
-        "北部市場発注書テンプレ（xlsm）",
+        "🧾 北部市場発注書テンプレート（xlsm）",
         type=["xlsm"],
-        key="hokubu_tpl"
+        key="hokubu_tpl",
     )
 
-    btn_hokubu = st.button("📦 北部市場発注書を作成", key="btn_hokubu")
+    # --------------------------------------------------------
+    # 作成ボタン
+    # --------------------------------------------------------
+    btn_hokubu = st.button(
+        "📦 北部市場発注書を作成",
+        key="btn_hokubu",
+        use_container_width=True,
+    )
 
+    # --------------------------------------------------------
+    # 発注書作成
+    # --------------------------------------------------------
     if btn_hokubu:
+
         if generate_hokubu_order_forms_both_facilities is None:
-            st.error("北部市場発注書機能を読み込めませんでした。")
-            st.exception(HOKUBU_IMPORT_ERROR)
-        elif not (hokubu_kenshu and hokubu_template):
-            st.error("⚠ 検収簿_加工済 と 北部市場テンプレを選択してください。")
-        else:
-            st.success("北部市場発注書を作成中です…")
 
-            with tempfile.TemporaryDirectory() as td:
-                td = Path(td)
-                k_path = td / "kenshu.xlsx"
-                t_path = td / "template.xlsm"
+            st.error(
+                "北部市場発注書機能を読み込めませんでした。"
+            )
 
-                k_path.write_bytes(hokubu_kenshu.getbuffer())
-                t_path.write_bytes(hokubu_template.getbuffer())
-
-                out_dir = td / "out"
-
-                tokuyou_xlsm, yuhouse_xlsm = generate_hokubu_order_forms_both_facilities(
-                    kenshu_xlsx_path=k_path,
-                    template_xlsm_path=t_path,
-                    out_dir=out_dir,
-                    out_prefix="北部市場発注書",
+            if HOKUBU_IMPORT_ERROR is not None:
+                st.exception(
+                    HOKUBU_IMPORT_ERROR
                 )
 
-                st.success("北部市場発注書を作成しました。")
+        elif not (
+            hokubu_kenshu
+            and hokubu_template
+        ):
 
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.download_button(
-                        "📥 特養：北部市場発注書をダウンロード",
-                        data=tokuyou_xlsm.read_bytes(),
-                        file_name=tokuyou_xlsm.name,
-                        mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                        key="download_hokubu_tokuyou",
-                    
-                    )
-                with c2:
-                    st.download_button(
-                        "📥 ユーハウス：北部市場発注書をダウンロード",
-                        data=yuhouse_xlsm.read_bytes(),
-                        file_name=yuhouse_xlsm.name,
-                        mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                        key="download_hokubu_yuhouse",
-                    )
+            st.warning(
+                "⚠ 検収簿_加工済 と"
+                " 北部市場テンプレートを"
+                "両方選択してください。"
+            )
+
+        else:
+
+            try:
+
+                with st.spinner(
+                    "北部市場発注書を作成しています…"
+                ):
+
+                    with tempfile.TemporaryDirectory() as td:
+
+                        td = Path(td)
+
+                        # ------------------------------------
+                        # 一時ファイル
+                        # ------------------------------------
+                        k_path = (
+                            td / "kenshu.xlsx"
+                        )
+
+                        t_path = (
+                            td / "template.xlsm"
+                        )
+
+                        k_path.write_bytes(
+                            hokubu_kenshu.getbuffer()
+                        )
+
+                        t_path.write_bytes(
+                            hokubu_template.getbuffer()
+                        )
+
+                        out_dir = (
+                            td / "out"
+                        )
+
+                        # ------------------------------------
+                        # 特養・ユーハウスを同時作成
+                        # ------------------------------------
+                        (
+                            tokuyou_xlsm,
+                            yuhouse_xlsm,
+                        ) = (
+                            generate_hokubu_order_forms_both_facilities(
+                                kenshu_xlsx_path=k_path,
+                                template_xlsm_path=t_path,
+                                out_dir=out_dir,
+                                out_prefix="北部市場発注書",
+                            )
+                        )
+
+                        # ------------------------------------
+                        # TemporaryDirectory が消える前に
+                        # bytesとして保存
+                        # ------------------------------------
+                        st.session_state[
+                            "hokubu_tokuyou_data"
+                        ] = tokuyou_xlsm.read_bytes()
+
+                        st.session_state[
+                            "hokubu_tokuyou_fname"
+                        ] = tokuyou_xlsm.name
+
+                        st.session_state[
+                            "hokubu_yuhouse_data"
+                        ] = yuhouse_xlsm.read_bytes()
+
+                        st.session_state[
+                            "hokubu_yuhouse_fname"
+                        ] = yuhouse_xlsm.name
+
+                st.success(
+                    "北部市場発注書を作成しました！ ✅"
+                )
+
+            except Exception as e:
+
+                st.session_state.pop(
+                    "hokubu_tokuyou_data",
+                    None,
+                )
+
+                st.session_state.pop(
+                    "hokubu_tokuyou_fname",
+                    None,
+                )
+
+                st.session_state.pop(
+                    "hokubu_yuhouse_data",
+                    None,
+                )
+
+                st.session_state.pop(
+                    "hokubu_yuhouse_fname",
+                    None,
+                )
+
+                st.error(
+                    "北部市場発注書の作成中に"
+                    "エラーが発生しました。"
+                )
+
+                st.exception(e)
+
+    # --------------------------------------------------------
+    # ダウンロード
+    # --------------------------------------------------------
+    if (
+        "hokubu_tokuyou_data"
+        in st.session_state
+        and
+        "hokubu_yuhouse_data"
+        in st.session_state
+    ):
+
+        st.divider()
+
+        st.markdown(
+            "### 📥 作成済みファイル"
+        )
+
+        c1, c2 = st.columns(2)
+
+        with c1:
+
+            st.download_button(
+                label=(
+                    "📥 特養："
+                    "北部市場発注書をダウンロード"
+                ),
+                data=st.session_state[
+                    "hokubu_tokuyou_data"
+                ],
+                file_name=st.session_state[
+                    "hokubu_tokuyou_fname"
+                ],
+                mime=(
+                    "application/vnd.ms-excel."
+                    "sheet.macroEnabled.12"
+                ),
+                key="download_hokubu_tokuyou",
+                use_container_width=True,
+            )
+
+        with c2:
+
+            st.download_button(
+                label=(
+                    "📥 ユーハウス："
+                    "北部市場発注書をダウンロード"
+                ),
+                data=st.session_state[
+                    "hokubu_yuhouse_data"
+                ],
+                file_name=st.session_state[
+                    "hokubu_yuhouse_fname"
+                ],
+                mime=(
+                    "application/vnd.ms-excel."
+                    "sheet.macroEnabled.12"
+                ),
+                key="download_hokubu_yuhouse",
+                use_container_width=True,
+            )
