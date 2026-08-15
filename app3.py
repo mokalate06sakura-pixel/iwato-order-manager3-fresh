@@ -597,37 +597,73 @@ def _safe_sheet_name(value, used_names):
 
 
 def create_vendor_journal_workbook(uploaded_file):
-    """加工済み検収簿から、仕入先ごとのテーブル付き仕訳表を作成する。"""
+    """加工済み検収簿から、仕入先ごとの仕訳表を作成する。"""
+
+    # ------------------------------------------------------------
+    # Excel読み込み
+    # ------------------------------------------------------------
     df = pd.read_excel(uploaded_file)
 
     if "仕入先" not in df.columns:
-        raise ValueError("『仕入先』列が見つかりません。検収簿（加工済）を選択してください。")
+        raise ValueError(
+            "『仕入先』列が見つかりません。"
+            "検収簿（加工済）を選択してください。"
+        )
 
-    # A列（通常は納品日）は削除せず、Excel出力後に非表示にする。
-    # 列番号ではなく元の見出し名を判定して名称を変更する。
-    # これによりH列「単位」を保持し、I・J・K列だけを変更する。
+    # ------------------------------------------------------------
+    # 列名を統一
+    # ------------------------------------------------------------
     rename_map = {}
 
     for col in df.columns:
         col_text = str(col)
 
-        if "介護老人福祉施設いわと" in col_text and "入所者" in col_text:
+        if (
+            "介護老人福祉施設いわと" in col_text
+            and "入所者" in col_text
+        ):
             rename_map[col] = "特養入所者"
 
-        elif "介護老人福祉施設いわと" in col_text and "職員" in col_text:
+        elif (
+            "介護老人福祉施設いわと" in col_text
+            and "職員" in col_text
+        ):
             rename_map[col] = "特養職員"
 
         elif (
-            ("ケアハウス" in col_text or "ユーハウス" in col_text or "ユー" in col_text)
-            and ("入所者" in col_text or "入居者" in col_text)
+            (
+                "ケアハウス" in col_text
+                or "ユーハウス" in col_text
+                or "ユー" in col_text
+            )
+            and (
+                "入所者" in col_text
+                or "入居者" in col_text
+            )
             and "職員" not in col_text
         ):
             rename_map[col] = "ユーハウス"
 
-    df = df.rename(columns=rename_map)
+    df = df.rename(
+        columns=rename_map
+    )
 
-    required_headers = ["単位", "特養入所者", "特養職員", "ユーハウス"]
-    missing_headers = [name for name in required_headers if name not in df.columns]
+    # ------------------------------------------------------------
+    # 必須列チェック
+    # ------------------------------------------------------------
+    required_headers = [
+        "単位",
+        "特養入所者",
+        "特養職員",
+        "ユーハウス",
+    ]
+
+    missing_headers = [
+        name
+        for name in required_headers
+        if name not in df.columns
+    ]
+
     if missing_headers:
         raise ValueError(
             "必要な列が見つかりません: "
@@ -635,37 +671,112 @@ def create_vendor_journal_workbook(uploaded_file):
             + "。検収簿（加工済）の見出しを確認してください。"
         )
 
-    # 各業者シートの最終列に、手入力用の「コメント」欄を追加
-    # 既にコメント列が存在する場合も、最終列へ移動する。
+    # ------------------------------------------------------------
+    # コメント列を最後へ
+    # ------------------------------------------------------------
     if "コメント" in df.columns:
-        comment_values = df.pop("コメント")
-        df["コメント"] = comment_values
+        comment_values = df.pop(
+            "コメント"
+        )
+        df["コメント"] = (
+            comment_values
+        )
     else:
         df["コメント"] = ""
 
-    # 仕入先が空白の行も独立シートにまとめる
-    df["仕入先"] = df["仕入先"].fillna("仕入先未設定").astype(str).str.strip()
-    df.loc[df["仕入先"] == "", "仕入先"] = "仕入先未設定"
+    # ------------------------------------------------------------
+    # 仕入先の空欄処理
+    # ------------------------------------------------------------
+    df["仕入先"] = (
+        df["仕入先"]
+        .fillna("仕入先未設定")
+        .astype(str)
+        .str.strip()
+    )
 
+    df.loc[
+        df["仕入先"] == "",
+        "仕入先"
+    ] = "仕入先未設定"
+
+    # ------------------------------------------------------------
+    # Excel出力
+    # ------------------------------------------------------------
     buffer = io.BytesIO()
+
     used_names = set()
 
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        for table_index, (vendor, vendor_df) in enumerate(df.groupby("仕入先", sort=True), start=1):
-            sheet_name = _safe_sheet_name(vendor, used_names)
-            vendor_df = vendor_df.reset_index(drop=True)
-            vendor_df.to_excel(writer, sheet_name=sheet_name, index=False)
+    with pd.ExcelWriter(
+        buffer,
+        engine="openpyxl"
+    ) as writer:
 
-            ws = writer.book[sheet_name]
-# --------------------------------------------------------
-# ①・②共通の印刷書式を適用
-# --------------------------------------------------------
-    apply_inspection_print_style(ws)
-           
+        for (
+            table_index,
+            (vendor, vendor_df)
+        ) in enumerate(
+            df.groupby(
+                "仕入先",
+                sort=True
+            ),
+            start=1
+        ):
 
+            # ----------------------------------------------------
+            # シート名
+            # ----------------------------------------------------
+            sheet_name = (
+                _safe_sheet_name(
+                    vendor,
+                    used_names
+                )
+            )
+
+            vendor_df = (
+                vendor_df
+                .reset_index(
+                    drop=True
+                )
+            )
+
+            # ----------------------------------------------------
+            # Excelへ書き込み
+            # ----------------------------------------------------
+            vendor_df.to_excel(
+                writer,
+                sheet_name=sheet_name,
+                index=False
+            )
+
+            ws = writer.book[
+                sheet_name
+            ]
+
+            # ----------------------------------------------------
+            # ①・② 共通の印刷書式を適用
+            # ----------------------------------------------------
+            apply_inspection_print_style(
+                ws
+            )
+
+    # ------------------------------------------------------------
+    # 出力ファイル名
+    # ------------------------------------------------------------
     buffer.seek(0)
-    token = detect_min_usage_date_token(df, "使用日")
-    fname = f"業者別仕訳表_{token}.xlsx" if token else "業者別仕訳表.xlsx"
+
+    token = (
+        detect_min_usage_date_token(
+            df,
+            "使用日"
+        )
+    )
+
+    fname = (
+        f"業者別仕訳表_{token}.xlsx"
+        if token
+        else "業者別仕訳表.xlsx"
+    )
+
     return buffer.read(), fname
 
 
