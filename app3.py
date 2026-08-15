@@ -986,12 +986,13 @@ if page == "① 検収簿整形":
             st.success("検収簿の整形が完了しました！")
 
         if "ins_data" in st.session_state:
-            st.download_button(
-                "📥 検収簿（加工済）をダウンロード",
-                st.session_state["ins_data"],
-                st.session_state["ins_fname"]
-            )
-
+           st.download_button(
+   　　　　　　 "📥 検収簿（加工済）をダウンロード",
+   　　　　　　 data=st.session_state["ins_data"],
+   　　　　　　 file_name=st.session_state["ins_fname"],
+   　　　　　　 key="download_inspection",
+   　　　　　　 on_click="ignore",
+　　　　　　)
 # ------------------------------------------------------------
 # ② 業者別仕訳表
 # ------------------------------------------------------------
@@ -1026,12 +1027,14 @@ elif page == "② 業者別仕訳表":
                 st.success("業者別仕訳表の作成が完了しました！")
 
             if "vendor_journal_data" in st.session_state:
-                st.download_button(
-                    "📥 業者別仕訳表をダウンロード",
-                    data=st.session_state["vendor_journal_data"],
-                    file_name=st.session_state["vendor_journal_fname"],
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+               st.download_button(
+  　　　　　　　　  "📥 業者別仕訳表をダウンロード",
+   　　　　　　　　 data=st.session_state["vendor_journal_data"],
+   　　　　　　　　 file_name=st.session_state["vendor_journal_fname"],
+   　　　　　　　　 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+   　　　　　　　　 key="download_vendor_journal",
+   　　　　　　　　 on_click="ignore",
+　　　　　　　　)
 
         except Exception as e:
             st.error("業者別仕訳表の作成中にエラーが発生しました。")
@@ -1084,11 +1087,13 @@ elif page == "③ 注文書作成":
 
             if "order_data" in st.session_state:
                 st.download_button(
-                    "📥 注文書ファイルをダウンロード",
-                    st.session_state["order_data"],
-                    st.session_state["order_fname"],
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+    　　　　　　　　　"📥 注文書ファイルをダウンロード",
+   　　　　　　　　　 data=st.session_state["order_data"],
+   　　　　　　　　　 file_name=st.session_state["order_fname"],
+   　　　　　　　　　 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+   　　　　　　　　　 key="download_order",
+  　　　　　　　　　  on_click="ignore",
+　　　　　　　　　)
 
         except Exception as e:
             st.error("注文書作成中にエラーが発生しました。アップロードファイルを確認してください。")
@@ -1127,6 +1132,7 @@ elif page == "④ 丸八発注書作成":
         kenshu_file = st.file_uploader(
             "検収簿_加工済（xlsx）",
             type=["xlsx"],
+            
             key="kenshu_maruhachi"
         )
 
