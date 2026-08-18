@@ -30,31 +30,153 @@ except Exception as exc:
 st.set_page_config(page_title="発注・検収サポートシステム", layout="wide")
 
 # ------------------------------------------------------------
-# Streamlit 安定版テーマ
-# 独自HTML・内部DOM依存をできるだけ減らす
+# 🌸 Streamlit かわいい安定版テーマ
 # ------------------------------------------------------------
 def apply_cute_theme():
-    st.markdown(
+    st.html(
         """
         <style>
 
-        /* 全体 */
+        /* ====================================================
+           全体
+        ==================================================== */
         .stApp {
-            background: linear-gradient(
-                180deg,
-                #FFF7FB 0%,
-                #F7FAFF 100%
-            );
+            background:
+                linear-gradient(
+                    180deg,
+                    #FFF8FC 0%,
+                    #F7FAFF 55%,
+                    #FFFDF8 100%
+                );
         }
 
-        /* メイン領域 */
         .block-container {
-            padding-top: 1.8rem;
-            padding-bottom: 2rem;
-            max-width: 1050px;
+            padding-top: 2.4rem;
+            padding-bottom: 3rem;
+            max-width: 1080px;
         }
 
-        /* 見出し */
+        /* ====================================================
+           アプリ上部タイトル
+        ==================================================== */
+        .app-hero {
+            background:
+                linear-gradient(
+                    135deg,
+                    #FFF0F7 0%,
+                    #F1F7FF 55%,
+                    #FFF9EC 100%
+                );
+            border: 1px solid #F0DCE9;
+            border-radius: 24px;
+            padding: 24px 28px;
+            margin-bottom: 24px;
+            box-shadow:
+                0 7px 22px rgba(110, 85, 120, 0.09);
+        }
+
+        .app-hero-title {
+            font-size: 30px;
+            font-weight: 800;
+            color: #6B4E71;
+            margin-bottom: 8px;
+        }
+
+        .app-hero-sub {
+            font-size: 16px;
+            color: #665B68;
+            line-height: 1.8;
+            margin-bottom: 14px;
+        }
+
+        .cute-pill {
+            display: inline-block;
+            padding: 7px 12px;
+            margin-right: 7px;
+            margin-bottom: 5px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .pill-pink {
+            background: #FFEAF3;
+            color: #A55278;
+        }
+
+        .pill-green {
+            background: #E9F8EE;
+            color: #4B8060;
+        }
+
+        .pill-blue {
+            background: #EAF3FF;
+            color: #4C7199;
+        }
+
+        /* ====================================================
+           各ページのメインカード
+        ==================================================== */
+        .main-feature-card {
+            background: rgba(255,255,255,0.92);
+            border: 1px solid #F0DCE9;
+            border-radius: 22px;
+            padding: 24px 28px;
+            margin-top: 4px;
+            margin-bottom: 22px;
+            box-shadow:
+                0 6px 18px rgba(120,90,120,0.08);
+        }
+
+        .main-feature-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #6B4E71;
+            margin-bottom: 10px;
+        }
+
+        .main-feature-sub {
+            font-size: 16px;
+            color: #594F5C;
+            line-height: 1.85;
+        }
+
+        /* ====================================================
+           注意書き
+        ==================================================== */
+        .main-note-box {
+            background: #FFF8E8;
+            border-left: 5px solid #F1B66B;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-top: 15px;
+            color: #6A5643;
+            line-height: 1.7;
+        }
+
+        .main-note-blue {
+            background: #EEF6FF;
+            border-left: 5px solid #8BB9E8;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-top: 15px;
+            color: #4B6075;
+            line-height: 1.7;
+        }
+
+        .main-note-green {
+            background: #EFF9F2;
+            border-left: 5px solid #8BC69D;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-top: 15px;
+            color: #496453;
+            line-height: 1.7;
+        }
+
+        /* ====================================================
+           見出し
+        ==================================================== */
         h1 {
             color: #6B4E71;
             font-weight: 800;
@@ -65,42 +187,126 @@ def apply_cute_theme():
             font-weight: 750;
         }
 
-        /* ボタン */
+        /* ====================================================
+           ボタン
+        ==================================================== */
         .stButton > button {
-            border-radius: 12px;
+            border-radius: 16px;
             font-weight: 700;
-            min-height: 46px;
+            min-height: 48px;
+            border: 1px solid #E7D7E5;
+            box-shadow:
+                0 3px 9px rgba(100,80,110,0.08);
         }
 
-        /* ダウンロードボタン */
+        .stButton > button:hover {
+            border-color: #D9B8D2;
+            box-shadow:
+                0 5px 12px rgba(100,80,110,0.12);
+        }
+
+        /* ====================================================
+           ダウンロードボタン
+        ==================================================== */
         [data-testid="stDownloadButton"] button {
-            border-radius: 12px;
+            border-radius: 16px;
             font-weight: 700;
-            min-height: 46px;
+            min-height: 48px;
+            border: 1px solid #D8E5D9;
+            box-shadow:
+                0 3px 9px rgba(90,120,100,0.08);
         }
 
-        /* ファイルアップロード */
+        /* ====================================================
+           ファイルアップロード
+        ==================================================== */
         [data-testid="stFileUploader"] {
-            border-radius: 12px;
+            background: #FBFCFF;
+            border: 1px solid #E1E8F2;
+            border-radius: 18px;
+            padding: 8px;
         }
 
-        /* 通知 */
+        [data-testid="stFileUploaderDropzone"] {
+            border-radius: 14px;
+            background: #F5F8FC;
+        }
+
+        /* ====================================================
+           通知
+        ==================================================== */
         [data-testid="stAlert"] {
-            border-radius: 12px;
+            border-radius: 14px;
         }
 
-        /* サイドバー */
+        /* ====================================================
+           サイドバー
+        ==================================================== */
         [data-testid="stSidebar"] {
-            background: linear-gradient(
-                180deg,
-                #F8F7F5 0%,
-                #F0EDEA 100%
-            );
+            background:
+                linear-gradient(
+                    180deg,
+                    #FFF8FB 0%,
+                    #F7F4F1 100%
+                );
+        }
+
+        .sidebar-section-title {
+            margin-bottom: 0.8rem;
+            padding: 11px 12px;
+            border-radius: 13px;
+            background: #F6EAF4;
+            color: #6B4E71;
+            font-weight: 800;
+            font-size: 18px;
+        }
+
+        .menu-group-title-blue {
+            margin-top: 0.8rem;
+            margin-bottom: 0.5rem;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: #EAF4FF;
+            color: #3F6F9F;
+            font-weight: 700;
+        }
+
+        .menu-group-title-orange {
+            margin-top: 1.2rem;
+            margin-bottom: 0.5rem;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: #FFF1E8;
+            color: #B85C38;
+            font-weight: 700;
+        }
+
+        /* ====================================================
+           小さいカード
+        ==================================================== */
+        .mini-card {
+            background: rgba(255,255,255,0.90);
+            border: 1px solid #E7E2EB;
+            border-radius: 17px;
+            padding: 15px 17px;
+            margin-bottom: 10px;
+        }
+
+        .mini-card-title {
+            color: #6B4E71;
+            font-size: 17px;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+
+        .mini-card-sub {
+            color: #69616C;
+            font-size: 14px;
+            line-height: 1.6;
         }
 
         </style>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -122,8 +328,6 @@ def parse_mmdd(value: str):
     except Exception:
         return None
 
-def detect_min_usage_date_token(df, col="使用日"):
-    pass
 
 # ------------------------------------------------------------
 # ①・② 共通 Excel印刷書式
@@ -1389,170 +1593,180 @@ def create_order_workbook(uploaded_file, order_type):
 
 
 # ------------------------------------------------------------
-# 🖥️ UI構築（左メニューでページ切替）
 # ------------------------------------------------------------
-st.markdown(
-    """
-<div style="margin-bottom: 1.5rem;">
-  <span class="app-title">発注・検収サポートシステム</span>
-</div>
+# 🖥️ UI構築
+# ------------------------------------------------------------
 
-<div style="margin-bottom: 2.0rem;">
-  <span class="subtitle-pill sub-orange">毎日の業務をかんたんに</span>
-  <span class="subtitle-pill sub-green">発注書を自動作成</span>
-  <span class="subtitle-pill sub-blue">検収簿を整形</span>
-</div>
-""",
-    unsafe_allow_html=True,
+# ============================================================
+# 🌸 アプリ上部
+# ============================================================
+st.html(
+    '<div class="app-hero">'
+    '<div class="app-hero-title">🌷 発注・検収サポートシステム</div>'
+    '<div class="app-hero-sub">毎日の発注・検収業務を、やさしく・かんたんに。</div>'
+    '<span class="cute-pill pill-pink">🧾 検収簿を整形</span>'
+    '<span class="cute-pill pill-green">📦 発注書を自動作成</span>'
+    '<span class="cute-pill pill-blue">✨ 業務をかんたんに</span>'
+    '</div>',
 )
 
+# ============================================================
+# サイドバー
+# ============================================================
 with st.sidebar:
-    st.markdown(
-        '<div class="sidebar-section-title">▦ ユーザーメニュー</div>',
-        unsafe_allow_html=True,
+    st.html(
+        '<div class="sidebar-section-title">🌸 ユーザーメニュー</div>'
     )
-    st.markdown(
-        '<div class="menu-group-title-blue">▼ 検収関連</div>',
-        unsafe_allow_html=True,
+
+    st.html(
+        '<div class="menu-group-title-blue">▼ 📘 検収・注文関連</div>'
     )
 
     page = st.radio(
         "画面を選択してください",
-               [
+        [
             "① 検収簿整形",
             "② 業者別仕訳表",
             "③ 注文書作成",
             "④ 丸八発注書作成",
             "⑤ 北部市場発注書作成",
         ],
+        key="main_page_selector",
         label_visibility="collapsed",
     )
 
-# ------------------------------------------------------------
+    st.html(
+        '<div class="menu-group-title-orange">'
+        '📦 ④・⑤は業者別発注書メニューです'
+        '</div>'
+    )
+
+
+# ============================================================
 # ① 検収簿整形
-# ------------------------------------------------------------
+# ============================================================
 if page == "① 検収簿整形":
-    st.markdown(
-        """
-<div class="feature-card">
-  <div class="feature-title">① 検収簿を整える"</div>
-  <div class="feature-sub">
-    MultiIndex の検収記録簿を<br>
-    A〜H列だけの加工済みファイルに整形します。<br>
-    ※ 献ダテマンから出力したファイルを<br>
-      「<b>検収記録簿_原本.xlsx</b>」の名前で保存して下さい。
-  </div>
-  <hr class="soft"/>
-</div>
-        """,
-        unsafe_allow_html=True,
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🌷 ① 検収簿を整える</div>'
+        '<div class="main-feature-sub">'
+        '献ダテマンから出力した検収記録簿を、<br>'
+        '発注・検収アプリで使いやすい形に整えます。'
+        '</div>'
+        '<div class="main-note-box">'
+        '📌 献ダテマンから出力したファイルを<br>'
+        '<b>「検収記録簿_原本.xlsx」</b> の名前で保存して下さい。'
+        '</div>'
+        '</div>',
     )
 
     ins_file = st.file_uploader(
-        "検収簿（原本 Excel）をアップロード",
+        "📄 検収簿（原本 Excel）をアップロード",
         type=["xlsx"],
-        key="ins"
+        key="ins",
     )
 
-    if ins_file:
-        if st.button("📘 検収簿を整形する", key="btn_ins"):
-            st.session_state["ins_data"], st.session_state["ins_fname"] = \
-                format_inspection_workbook(ins_file)
-            st.success("検収簿の整形が完了しました！")
+    if ins_file is not None:
+        if st.button(
+            "📘 検収簿を整形する",
+            key="btn_ins",
+            use_container_width=True,
+        ):
+            try:
+                (
+                    st.session_state["ins_data"],
+                    st.session_state["ins_fname"],
+                ) = format_inspection_workbook(ins_file)
+                st.success("🌸 検収簿の整形が完了しました！")
+            except Exception as e:
+                st.error("検収簿の整形中にエラーが発生しました。")
+                st.exception(e)
 
         if (
             "ins_data" in st.session_state
-            and
-            "ins_fname" in st.session_state
+            and "ins_fname" in st.session_state
         ):
             st.download_button(
-               label="📥 検収簿（加工済）をダウンロード",
-               data=st.session_state["ins_data"],
-               file_name=st.session_state["ins_fname"],
-               mime=(
-                   "application/vnd.openxmlformats-"
-                   "officedocument.spreadsheetml.sheet"
-                ),
+                label="📥 検収簿（加工済）をダウンロード",
+                data=st.session_state["ins_data"],
+                file_name=st.session_state["ins_fname"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_inspection",
-                
                 use_container_width=True,
             )
-# ------------------------------------------------------------
+
+
+# ============================================================
 # ② 業者別仕訳表
-# ------------------------------------------------------------
+# ============================================================
 elif page == "② 業者別仕訳表":
-    st.markdown(
-        """
-<div class="feature-card">
-  <div class="feature-title">② 業者別仕訳表を作成</div>
-  <div class="feature-sub">
-    加工済み検収簿を仕入先ごとのシートに分割し、<br>
-    通常のセル形式・A3横向き印刷設定で出力します。
-  </div>
-  <hr class="soft"/>
-</div>
-        """,
-        unsafe_allow_html=True,
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">📊 ② 業者別仕訳表を作成</div>'
+        '<div class="main-feature-sub">'
+        '加工済み検収簿を、仕入先ごとのシートに分けて自動作成します。'
+        '</div>'
+        '<div class="main-note-blue">'
+        '💡 「① 検収簿整形」で作成した <b>検収簿_加工済</b> を使用してください。<br>'
+        'A3縦・文字16・行高26・罫線付きで出力します。'
+        '</div>'
+        '</div>',
     )
 
     vendor_file = st.file_uploader(
-        "検収簿（加工済 Excel）をアップロード",
+        "📄 検収簿（加工済 Excel）をアップロード",
         type=["xlsx"],
         key="vendor_journal_src",
     )
 
-    if vendor_file:
+    if vendor_file is not None:
         try:
-            if st.button("📊 業者別仕訳表を作成する", key="btn_vendor_journal"):
+            if st.button(
+                "📊 業者別仕訳表を作成する",
+                key="btn_vendor_journal",
+                use_container_width=True,
+            ):
                 (
                     st.session_state["vendor_journal_data"],
                     st.session_state["vendor_journal_fname"],
                 ) = create_vendor_journal_workbook(vendor_file)
-                st.success("業者別仕訳表の作成が完了しました！")
+                st.success("🌸 業者別仕訳表の作成が完了しました！")
 
             if (
                 "vendor_journal_data" in st.session_state
-                and
-                "vendor_journal_fname" in st.session_state
+                and "vendor_journal_fname" in st.session_state
             ):
                 st.download_button(
-                   label="📥 業者別仕訳表をダウンロード",
-                   data=st.session_state["vendor_journal_data"],
-                   file_name=st.session_state["vendor_journal_fname"],
-                   mime=(
-                       "application/vnd.openxmlformats-"
-                       "officedocument.spreadsheetml.sheet"
-                    ),
+                    label="📥 業者別仕訳表をダウンロード",
+                    data=st.session_state["vendor_journal_data"],
+                    file_name=st.session_state["vendor_journal_fname"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="download_vendor_journal",
-                    
                     use_container_width=True,
                 )
-
         except Exception as e:
             st.error("業者別仕訳表の作成中にエラーが発生しました。")
             st.exception(e)
 
 
-# ------------------------------------------------------------
+# ============================================================
 # ③ 注文書作成
-# ------------------------------------------------------------
+# ============================================================
 elif page == "③ 注文書作成":
 
-    st.markdown(
-        """
-<div class="feature-card">
-  <div class="feature-title">③ 注文書を作成</div>
-  <div class="feature-sub">
-    特養（介護老人福祉施設いわと）または
-    ユーハウスいわとを選択し、<br>
-    仕入先別の注文書を自動作成します。<br><br>
-    特養は「入所者」と「職員」を
-    同じ注文書にまとめて出力します。
-  </div>
-  <hr class="soft"/>
-</div>
-        """,
-        unsafe_allow_html=True,
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">📗 ③ 注文書を作成</div>'
+        '<div class="main-feature-sub">'
+        '特養またはユーハウスを選択して、<br>'
+        '仕入先別の注文書を自動作成します。'
+        '</div>'
+        '<div class="main-note-green">'
+        '🌿 特養では <b>「入所者」と「職員」</b> を同じ注文書にまとめて出力します。'
+        '</div>'
+        '</div>',
     )
 
     order_type = st.radio(
@@ -1566,364 +1780,282 @@ elif page == "③ 注文書作成":
     )
 
     order_file = st.file_uploader(
-        "注文書のもとになる検収簿 Excel をアップロード",
+        "📄 注文書のもとになる検収簿 Excel",
         type=["xlsx"],
         key="order_src",
     )
 
-    st.markdown(
-        """
-<p class="small-note">
-※ 「① 検収簿整形」で加工したExcelファイルを
-使用してください。
-</p>
-        """,
-        unsafe_allow_html=True,
+    st.info(
+        "① 検収簿整形で作成した「検収簿_加工済」ファイルを使用してください。"
     )
 
-    # --------------------------------------------------------
-    # アップロードされたファイルごとに
-    # 古い注文書データが残らないよう管理
-    # --------------------------------------------------------
     if order_file is not None:
-
         current_file_id = (
             order_file.name,
             order_file.size,
             order_type,
         )
 
-        previous_file_id = st.session_state.get(
-            "order_current_file_id"
-        )
+        previous_file_id = st.session_state.get("order_current_file_id")
 
         if previous_file_id != current_file_id:
+            st.session_state["order_current_file_id"] = current_file_id
+            st.session_state.pop("order_data", None)
+            st.session_state.pop("order_fname", None)
 
-            st.session_state["order_current_file_id"] = (
-                current_file_id
-            )
-
-            st.session_state.pop(
-                "order_data",
-                None
-            )
-
-            st.session_state.pop(
-                "order_fname",
-                None
-            )
-
-        # ----------------------------------------------------
-        # 作成ボタン
-        # ----------------------------------------------------
         if st.button(
             "📗 注文書を作成する",
             key="btn_order",
             use_container_width=True,
         ):
-
             try:
-
-                order_bytes, order_fname = (
-                    create_order_workbook(
-                        order_file,
-                        order_type,
-                    )
+                order_bytes, order_fname = create_order_workbook(
+                    order_file,
+                    order_type,
                 )
-
-                st.session_state["order_data"] = (
-                    order_bytes
-                )
-
-                st.session_state["order_fname"] = (
-                    order_fname
-                )
-
-                st.success(
-                    f"{order_type} の注文書を作成しました！"
-                )
-
+                st.session_state["order_data"] = order_bytes
+                st.session_state["order_fname"] = order_fname
+                st.success(f"🌸 {order_type} の注文書を作成しました！")
             except Exception as e:
-
-                st.session_state.pop(
-                    "order_data",
-                    None
-                )
-
-                st.session_state.pop(
-                    "order_fname",
-                    None
-                )
-
-                st.error(
-                    "注文書作成中にエラーが発生しました。"
-                )
-
+                st.session_state.pop("order_data", None)
+                st.session_state.pop("order_fname", None)
+                st.error("注文書作成中にエラーが発生しました。")
                 st.exception(e)
 
-        # ----------------------------------------------------
-        # ダウンロード
-        # ----------------------------------------------------
         if (
             "order_data" in st.session_state
-            and
-            "order_fname" in st.session_state
+            and "order_fname" in st.session_state
         ):
-
             st.download_button(
-            label="📥 注文書ファイルをダウンロード",
-            data=st.session_state["order_data"],
-            file_name=st.session_state["order_fname"],
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_order",
-            use_container_width=True,
-        )
+                label="📥 注文書ファイルをダウンロード",
+                data=st.session_state["order_data"],
+                file_name=st.session_state["order_fname"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_order",
+                use_container_width=True,
+            )
 
-# ------------------------------------------------------------
+
+# ============================================================
 # ④ 丸八発注書作成
-# ------------------------------------------------------------
+# ============================================================
 elif page == "④ 丸八発注書作成":
-    st.markdown(
-        """
-<div class="feature-card">
-  <div class="feature-title">④ 丸八発注書を作成</div>
-  <div class="feature-sub">
-    検収簿_加工済、丸八テンプレ、丸八コード一覧を使って<br>
-    特養用・ユーハウス用の丸八発注書を自動作成します。
-  </div>
-  <hr class="soft"/>
-</div>
-        """,
-        unsafe_allow_html=True,
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">📦 ④ 丸八発注書を作成</div>'
+        '<div class="main-feature-sub">'
+        '検収簿_加工済・丸八発注書テンプレート・<br>'
+        '丸八コード一覧から、特養用とユーハウス用の発注書を同時に作成します。'
+        '</div>'
+        '<div class="main-note-box">📌 下の3つのファイルをすべて選択してください。</div>'
+        '</div>',
     )
 
     mcol1, mcol2, mcol3 = st.columns(3)
 
     with mcol1:
-        st.markdown(
-            """
-            <div class="feature-card">
-              <div class="feature-title">📄 検収簿_加工済</div>
-              <div class="feature-sub">丸八ヒロタの行を含む加工済ファイル</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">📄 検収簿_加工済</div>'
+            '<div class="mini-card-sub">丸八ヒロタのデータを含む加工済ファイル</div>'
+            '</div>',
         )
         kenshu_file = st.file_uploader(
             "検収簿_加工済（xlsx）",
             type=["xlsx"],
-            
-            key="kenshu_maruhachi"
+            key="kenshu_maruhachi",
         )
 
     with mcol2:
-        st.markdown(
-            """
-            <div class="feature-card">
-              <div class="feature-title">🧾 丸八発注書テンプレ</div>
-              <div class="feature-sub">丸八ヒロタ専用の発注書テンプレート</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">🧾 丸八発注書テンプレ</div>'
+            '<div class="mini-card-sub">丸八ヒロタ専用の発注書テンプレート</div>'
+            '</div>',
         )
         template_file = st.file_uploader(
             "丸八発注書テンプレ（xlsm）",
             type=["xlsm"],
-            key="tpl_maruhachi"
+            key="tpl_maruhachi",
         )
 
     with mcol3:
-        st.markdown(
-            """
-            <div class="feature-card">
-              <div class="feature-title">🏷️ 丸八コード一覧</div>
-              <div class="feature-sub">タグシート付きのコード対応表</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">🏷️ 丸八コード一覧</div>'
+            '<div class="mini-card-sub">タグシート付きのコード対応表</div>'
+            '</div>',
         )
         tag_file = st.file_uploader(
             "丸八コード一覧（xlsm）",
             type=["xlsm"],
-            key="tag_maruhachi"
+            key="tag_maruhachi",
         )
 
-    st.markdown("### 出力")
-    bcol1, bcol2 = st.columns(2)
-
-    with bcol1:
-        btn = st.button("📦 丸八発注書を作成", key="btn_maruhachi")
-
-    with bcol2:
-        st.markdown(
-            '<p class="small-note">※ 特養用とユーハウス用を同時に作成します。</p>',
-            unsafe_allow_html=True,
-        )
+    btn = st.button(
+        "📦 丸八発注書を作成",
+        key="btn_maruhachi",
+        use_container_width=True,
+    )
 
     if btn:
         if generate_maruhachi_order_forms_both_facilities is None:
             st.error("丸八発注書機能を読み込めませんでした。")
-            st.exception(MARUHACHI_IMPORT_ERROR)
+            if MARUHACHI_IMPORT_ERROR is not None:
+                st.exception(MARUHACHI_IMPORT_ERROR)
+
         elif not (kenshu_file and template_file and tag_file):
-            st.error("⚠ 3つのファイル（検収簿・テンプレ・コード一覧）をすべて選択してください。")
+            st.warning("⚠ 3つのファイルをすべて選択してください。")
+
         else:
-            st.success("丸八発注書を作成中です…")
+            try:
+                with st.spinner("丸八発注書を作成しています…"):
+                    with tempfile.TemporaryDirectory() as td:
+                        td = Path(td)
 
-            with tempfile.TemporaryDirectory() as td:
-                td = Path(td)
+                        k_path = td / "kenshu.xlsx"
+                        t_path = td / "template.xlsm"
+                        m_path = td / "tag.xlsm"
 
-                k_path = td / "kenshu.xlsx"
-                t_path = td / "template.xlsm"
-                m_path = td / "tag.xlsm"
+                        k_path.write_bytes(kenshu_file.getbuffer())
+                        t_path.write_bytes(template_file.getbuffer())
+                        m_path.write_bytes(tag_file.getbuffer())
 
-                k_path.write_bytes(kenshu_file.getbuffer())
-                t_path.write_bytes(template_file.getbuffer())
-                m_path.write_bytes(tag_file.getbuffer())
+                        out_dir = td / "out"
 
-                out_dir = td / "out"
+                        tokuyou_xlsm, yuhouse_xlsm = (
+                            generate_maruhachi_order_forms_both_facilities(
+                                kenshu_xlsx_path=k_path,
+                                template_xlsm_path=t_path,
+                                tag_xlsm_path=m_path,
+                                out_dir=out_dir,
+                                out_prefix="丸八発注書",
+                            )
+                        )
 
-                tokuyou_xlsm, yuhouse_xlsm = generate_maruhachi_order_forms_both_facilities(
-                    kenshu_xlsx_path=k_path,
-                    template_xlsm_path=t_path,
-                    tag_xlsm_path=m_path,
-                    out_dir=out_dir,
-                    out_prefix="丸八発注書",
-                )
+                        st.session_state["maruhachi_tokuyou_data"] = tokuyou_xlsm.read_bytes()
+                        st.session_state["maruhachi_tokuyou_fname"] = tokuyou_xlsm.name
+                        st.session_state["maruhachi_yuhouse_data"] = yuhouse_xlsm.read_bytes()
+                        st.session_state["maruhachi_yuhouse_fname"] = yuhouse_xlsm.name
 
-                st.success("作成完了 ✅ ダウンロードできます")
+                st.success("🌸 丸八発注書を作成しました！")
 
-                dcol1, dcol2 = st.columns(2)
-                with dcol1:
-                    st.download_button(
-                       "📥 特養：丸八発注書をダウンロード",
-                       data=tokuyou_xlsm.read_bytes(),
-                       file_name=tokuyou_xlsm.name,
-                       mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                       key="download_maruhachi_tokuyou",
-                    )
-                with dcol2:
-                    st.download_button(
-                        "📥 ユーハウス：丸八発注書をダウンロード",
-                        data=yuhouse_xlsm.read_bytes(),
-                        file_name=yuhouse_xlsm.name,
-                        mime="application/vnd.ms-excel.sheet.macroEnabled.12",
-                        key="download_maruhachi_yuhouse",
-                    )
+            except Exception as e:
+                st.session_state.pop("maruhachi_tokuyou_data", None)
+                st.session_state.pop("maruhachi_tokuyou_fname", None)
+                st.session_state.pop("maruhachi_yuhouse_data", None)
+                st.session_state.pop("maruhachi_yuhouse_fname", None)
+                st.error("丸八発注書の作成中にエラーが発生しました。")
+                st.exception(e)
 
-# ------------------------------------------------------------
+    if (
+        "maruhachi_tokuyou_data" in st.session_state
+        and "maruhachi_yuhouse_data" in st.session_state
+    ):
+        st.markdown("### 📥 作成済みファイル")
+
+        dcol1, dcol2 = st.columns(2)
+
+        with dcol1:
+            st.download_button(
+                "📥 特養：丸八発注書",
+                data=st.session_state["maruhachi_tokuyou_data"],
+                file_name=st.session_state["maruhachi_tokuyou_fname"],
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                key="download_maruhachi_tokuyou",
+                use_container_width=True,
+            )
+
+        with dcol2:
+            st.download_button(
+                "📥 ユーハウス：丸八発注書",
+                data=st.session_state["maruhachi_yuhouse_data"],
+                file_name=st.session_state["maruhachi_yuhouse_fname"],
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                key="download_maruhachi_yuhouse",
+                use_container_width=True,
+            )
+
+
+# ============================================================
 # ⑤ 北部市場発注書作成
-# ------------------------------------------------------------
+# ============================================================
 elif page == "⑤ 北部市場発注書作成":
 
-    st.subheader(
-        "⑤ 📦 北部市場発注書を作成"
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🥕 ⑤ 北部市場発注書を作成</div>'
+        '<div class="main-feature-sub">'
+        '検収簿_加工済と北部市場発注書テンプレートを使って、<br>'
+        '特養用・ユーハウス用の発注書を同時に作成します。'
+        '</div>'
+        '<div class="main-note-green">'
+        '🌿 2つのファイルを選択して、「北部市場発注書を作成」を押してください。'
+        '</div>'
+        '</div>',
     )
 
-    st.write(
-        "検収簿_加工済と北部市場発注書テンプレートを使って、"
-        "特養用・ユーハウス用の発注書を自動作成します。"
-    )
+    hcol1, hcol2 = st.columns(2)
 
-    st.caption(
-        "※ 検収簿_加工済 と 北部市場発注書テンプレートの"
-        "2つのファイルを選択してください。"
-    )
+    with hcol1:
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">📄 検収簿_加工済</div>'
+            '<div class="mini-card-sub">北部市場販売のデータを含む加工済ファイル</div>'
+            '</div>',
+        )
+        hokubu_kenshu = st.file_uploader(
+            "検収簿_加工済（xlsx）",
+            type=["xlsx"],
+            key="hokubu_kenshu",
+        )
 
-    st.divider()
+    with hcol2:
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">🧾 北部市場テンプレート</div>'
+            '<div class="mini-card-sub">北部市場専用の発注書テンプレート</div>'
+            '</div>',
+        )
+        hokubu_template = st.file_uploader(
+            "北部市場発注書テンプレート（xlsm）",
+            type=["xlsm"],
+            key="hokubu_tpl",
+        )
 
-    # --------------------------------------------------------
-    # ファイル選択
-    # --------------------------------------------------------
-    hokubu_kenshu = st.file_uploader(
-        "📄 検収簿_加工済（xlsx）",
-        type=["xlsx"],
-        key="hokubu_kenshu",
-    )
-
-    hokubu_template = st.file_uploader(
-        "🧾 北部市場発注書テンプレート（xlsm）",
-        type=["xlsm"],
-        key="hokubu_tpl",
-    )
-
-    # --------------------------------------------------------
-    # 作成ボタン
-    # --------------------------------------------------------
     btn_hokubu = st.button(
-        "📦 北部市場発注書を作成",
+        "🥕 北部市場発注書を作成",
         key="btn_hokubu",
         use_container_width=True,
     )
 
-    # --------------------------------------------------------
-    # 発注書作成
-    # --------------------------------------------------------
     if btn_hokubu:
-
         if generate_hokubu_order_forms_both_facilities is None:
-
-            st.error(
-                "北部市場発注書機能を読み込めませんでした。"
-            )
-
+            st.error("北部市場発注書機能を読み込めませんでした。")
             if HOKUBU_IMPORT_ERROR is not None:
-                st.exception(
-                    HOKUBU_IMPORT_ERROR
-                )
+                st.exception(HOKUBU_IMPORT_ERROR)
 
-        elif not (
-            hokubu_kenshu
-            and hokubu_template
-        ):
-
+        elif not (hokubu_kenshu and hokubu_template):
             st.warning(
-                "⚠ 検収簿_加工済 と"
-                " 北部市場テンプレートを"
-                "両方選択してください。"
+                "⚠ 検収簿_加工済 と 北部市場テンプレートを両方選択してください。"
             )
 
         else:
-
             try:
-
-                with st.spinner(
-                    "北部市場発注書を作成しています…"
-                ):
-
+                with st.spinner("北部市場発注書を作成しています…"):
                     with tempfile.TemporaryDirectory() as td:
-
                         td = Path(td)
 
-                        # ------------------------------------
-                        # 一時ファイル
-                        # ------------------------------------
-                        k_path = (
-                            td / "kenshu.xlsx"
-                        )
+                        k_path = td / "kenshu.xlsx"
+                        t_path = td / "template.xlsm"
 
-                        t_path = (
-                            td / "template.xlsm"
-                        )
+                        k_path.write_bytes(hokubu_kenshu.getbuffer())
+                        t_path.write_bytes(hokubu_template.getbuffer())
 
-                        k_path.write_bytes(
-                            hokubu_kenshu.getbuffer()
-                        )
+                        out_dir = td / "out"
 
-                        t_path.write_bytes(
-                            hokubu_template.getbuffer()
-                        )
-
-                        out_dir = (
-                            td / "out"
-                        )
-
-                        # ------------------------------------
-                        # 特養・ユーハウスを同時作成
-                        # ------------------------------------
-                        (
-                            tokuyou_xlsm,
-                            yuhouse_xlsm,
-                        ) = (
+                        tokuyou_xlsm, yuhouse_xlsm = (
                             generate_hokubu_order_forms_both_facilities(
                                 kenshu_xlsx_path=k_path,
                                 template_xlsm_path=t_path,
@@ -1932,116 +2064,45 @@ elif page == "⑤ 北部市場発注書作成":
                             )
                         )
 
-                        # ------------------------------------
-                        # TemporaryDirectory が消える前に
-                        # bytesとして保存
-                        # ------------------------------------
-                        st.session_state[
-                            "hokubu_tokuyou_data"
-                        ] = tokuyou_xlsm.read_bytes()
+                        st.session_state["hokubu_tokuyou_data"] = tokuyou_xlsm.read_bytes()
+                        st.session_state["hokubu_tokuyou_fname"] = tokuyou_xlsm.name
+                        st.session_state["hokubu_yuhouse_data"] = yuhouse_xlsm.read_bytes()
+                        st.session_state["hokubu_yuhouse_fname"] = yuhouse_xlsm.name
 
-                        st.session_state[
-                            "hokubu_tokuyou_fname"
-                        ] = tokuyou_xlsm.name
-
-                        st.session_state[
-                            "hokubu_yuhouse_data"
-                        ] = yuhouse_xlsm.read_bytes()
-
-                        st.session_state[
-                            "hokubu_yuhouse_fname"
-                        ] = yuhouse_xlsm.name
-
-                st.success(
-                    "北部市場発注書を作成しました！ ✅"
-                )
+                st.success("🌸 北部市場発注書を作成しました！")
 
             except Exception as e:
-
-                st.session_state.pop(
-                    "hokubu_tokuyou_data",
-                    None,
-                )
-
-                st.session_state.pop(
-                    "hokubu_tokuyou_fname",
-                    None,
-                )
-
-                st.session_state.pop(
-                    "hokubu_yuhouse_data",
-                    None,
-                )
-
-                st.session_state.pop(
-                    "hokubu_yuhouse_fname",
-                    None,
-                )
-
-                st.error(
-                    "北部市場発注書の作成中に"
-                    "エラーが発生しました。"
-                )
-
+                st.session_state.pop("hokubu_tokuyou_data", None)
+                st.session_state.pop("hokubu_tokuyou_fname", None)
+                st.session_state.pop("hokubu_yuhouse_data", None)
+                st.session_state.pop("hokubu_yuhouse_fname", None)
+                st.error("北部市場発注書の作成中にエラーが発生しました。")
                 st.exception(e)
 
-    # --------------------------------------------------------
-    # ダウンロード
-    # --------------------------------------------------------
     if (
-        "hokubu_tokuyou_data"
-        in st.session_state
-        and
-        "hokubu_yuhouse_data"
-        in st.session_state
+        "hokubu_tokuyou_data" in st.session_state
+        and "hokubu_yuhouse_data" in st.session_state
     ):
-
-        st.divider()
-
-        st.markdown(
-            "### 📥 作成済みファイル"
-        )
+        st.markdown("### 📥 作成済みファイル")
 
         c1, c2 = st.columns(2)
 
         with c1:
-
             st.download_button(
-                label=(
-                    "📥 特養："
-                    "北部市場発注書をダウンロード"
-                ),
-                data=st.session_state[
-                    "hokubu_tokuyou_data"
-                ],
-                file_name=st.session_state[
-                    "hokubu_tokuyou_fname"
-                ],
-                mime=(
-                    "application/vnd.ms-excel."
-                    "sheet.macroEnabled.12"
-                ),
+                label="📥 特養：北部市場発注書",
+                data=st.session_state["hokubu_tokuyou_data"],
+                file_name=st.session_state["hokubu_tokuyou_fname"],
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 key="download_hokubu_tokuyou",
                 use_container_width=True,
             )
 
         with c2:
-
             st.download_button(
-                label=(
-                    "📥 ユーハウス："
-                    "北部市場発注書をダウンロード"
-                ),
-                data=st.session_state[
-                    "hokubu_yuhouse_data"
-                ],
-                file_name=st.session_state[
-                    "hokubu_yuhouse_fname"
-                ],
-                mime=(
-                    "application/vnd.ms-excel."
-                    "sheet.macroEnabled.12"
-                ),
+                label="📥 ユーハウス：北部市場発注書",
+                data=st.session_state["hokubu_yuhouse_data"],
+                file_name=st.session_state["hokubu_yuhouse_fname"],
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 key="download_hokubu_yuhouse",
                 use_container_width=True,
             )
