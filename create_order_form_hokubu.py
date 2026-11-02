@@ -4,6 +4,39 @@ from typing import Optional
 
 import openpyxl
 import pandas as pd
+from copy import copy
+from openpyxl.styles import Font
+
+# 出力する北部市場発注書の書体を統一する
+ORDER_FONT_NAME = "游ゴシック"
+ORDER_BODY_FONT_SIZE = 11
+ORDER_TITLE_FONT_SIZE = 14
+ORDER_DATE_FONT_SIZE = 12
+
+
+def _standardize_order_fonts(ws, is_tokuyou: bool):
+    """テンプレートの罫線・配置・印刷設定を保ったまま書体を揃える。"""
+    date_address = TOKUYOU_DELIVERY_CELL if is_tokuyou else YUHOUSE_DELIVERY_CELL
+    for row in ws:
+        for cell in row:
+            # 結合セルの従属セルは変更しない
+            if cell.__class__.__name__ == "MergedCell":
+                continue
+            if cell.value is None:
+                continue
+            font = copy(cell.font)
+            font.name = ORDER_FONT_NAME
+            font.sz = ORDER_BODY_FONT_SIZE
+            if cell.coordinate == date_address:
+                font.sz = ORDER_DATE_FONT_SIZE
+                font.bold = True
+            elif cell.row <= 3 and isinstance(cell.value, str) and "発注" in cell.value:
+                font.sz = ORDER_TITLE_FONT_SIZE
+                font.bold = True
+            elif cell.row == DETAIL_START_ROW - 1:
+                font.bold = True
+            cell.font = font
+
 
 
 SUPPLIER_NAME = "北部市場販売"
@@ -456,6 +489,13 @@ def generate_hokubu_order_workbook(
             )
 
         row_in_page += 1
+
+    # ------------------------------------------------------------
+    # 作成済みの各シートに共通のフォント設定を適用
+    # ------------------------------------------------------------
+    for output_ws in wb.worksheets:
+        if output_ws is not base_ws:
+            _standardize_order_fonts(output_ws, is_tokuyou=is_tokuyou)
 
     # ------------------------------------------------------------
     # 元テンプレートシート削除
