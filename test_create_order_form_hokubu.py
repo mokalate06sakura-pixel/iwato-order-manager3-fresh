@@ -32,7 +32,7 @@ def make_template(path):
         ws.merge_cells("A1:K1")
         ws["A1"] = "発 注 書"
         ws.merge_cells("A2:G2")
-        ws["A2"] = "特養 いわと" if mode else "ユーハウス いわと"
+        ws["A2"] = "介護老人福祉施設　いわと" if mode else "ユーハウス　いわと"
         ws.merge_cells("A4:D4")
         ws["A4"] = hokubu.SUPPLIER_NAME
         ws["E4"] = "御 中"
@@ -102,6 +102,29 @@ def make_data(path):
 
 
 class QuantityTest(unittest.TestCase):
+    def test_header_height_and_quantity_precision_when_space_is_limited(self):
+        ws = openpyxl.Workbook().active
+        ws["A2"] = "介護老人福祉施設　いわと"
+        ws["K6"] = "消費・賞味　期限"
+        ws["K6"].alignment = Alignment(wrap_text=True)
+        ws.row_dimensions[6].height = 21.6
+        hokubu._write_row_tokuyou(ws, 7, "11/3", "微小数量", Decimal("0.00000123456789"), 0, "kg")
+        hokubu._standardize_order_fonts(ws, is_tokuyou=True)
+        self.assertEqual(ws["A2"].font.sz, 14)
+        self.assertTrue(ws["A2"].font.bold)
+        self.assertEqual(ws.row_dimensions[6].height, 39.6)
+        self.assertEqual(ws["D7"].number_format, "0.##############")
+        hokubu._write_row_tokuyou(ws, 8, "11/3", "整数数量", Decimal("5.0"), 0, "パック")
+        hokubu._standardize_order_fonts(ws, is_tokuyou=True)
+        self.assertEqual(ws["D8"].number_format, "0")
+        for address in ("D7", "E7", "F7"):
+            self.assertTrue(ws[address].alignment.shrink_to_fit)
+            self.assertFalse(ws[address].alignment.wrap_text)
+            self.assertEqual(ws[address].font.sz, 11)
+        # 再適用しても行高は増えない。
+        hokubu._standardize_order_fonts(ws, is_tokuyou=True)
+        self.assertEqual(ws.row_dimensions[6].height, 39.6)
+
     def test_noise_trailing_zeros_and_precision(self):
         for qty, unit, expected in [
             (4.6000000000000005, "kg", "4.6kg"),

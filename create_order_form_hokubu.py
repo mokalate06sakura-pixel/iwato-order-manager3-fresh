@@ -38,8 +38,10 @@ def _standardize_order_fonts(ws, is_tokuyou: bool):
             ):
                 font.sz = ORDER_DATE_FONT_SIZE
                 font.bold = True
-            elif cell.row <= 3 and any(
-                word in text for word in ("発注", "特養", "ユーハウス", "施設名")
+            elif cell.coordinate == "A2" or (
+                cell.row <= 3 and any(
+                    word in text for word in ("発注", "特養", "ユーハウス", "施設名")
+                )
             ):
                 font.sz = ORDER_TITLE_FONT_SIZE
                 font.bold = True
@@ -51,6 +53,14 @@ def _standardize_order_fonts(ws, is_tokuyou: bool):
             if cell.row == DETAIL_START_ROW - 1:
                 alignment.horizontal = "center"
                 alignment.vertical = "center"
+                if alignment.wrap_text:
+                    # 実テンプレートの期限・納品時間は11ptで最大3行になる。
+                    # この見出し行だけ、文字切れを防ぐ高さを確保する。
+                    dimension = ws.row_dimensions[cell.row]
+                    dimension.height = max(
+                        dimension.height or ws.sheet_format.defaultRowHeight or 15,
+                        ORDER_BODY_FONT_SIZE * 3.6,
+                    )
             elif DETAIL_START_ROW <= cell.row <= DETAIL_END_ROW:
                 alignment.vertical = "center"
                 if cell.column in (1, 2, *quantity_columns):
@@ -60,7 +70,13 @@ def _standardize_order_fonts(ws, is_tokuyou: bool):
                     alignment.wrap_text = False
                     alignment.shrink_to_fit = True
                 if cell.column in quantity_columns:
+                    alignment.wrap_text = False
+                    alignment.shrink_to_fit = True
                     cell.number_format = "General"
+                    if isinstance(cell.value, (int, float, Decimal)):
+                        # 狭い数量欄でも科学表記による桁の省略を避ける。
+                        places = max(0, -_decimal_quantity(cell.value).normalize().as_tuple().exponent)
+                        cell.number_format = "0" + ("." + "#" * places if places else "")
             cell.alignment = alignment
 
 
