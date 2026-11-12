@@ -102,6 +102,29 @@ def make_data(path):
 
 
 class QuantityTest(unittest.TestCase):
+    def test_misaligned_dates_food_and_quantities_are_fitted_and_centered(self):
+        ws = openpyxl.Workbook().active
+        ws.merge_cells("B7:C7")
+        hokubu._write_row_tokuyou(ws, 7, "11/3火", "ファミリーパック 6枚切り", 0.72, 0.18, "kg")
+        for address in ("A7", "B7", "D7", "E7", "F7"):
+            ws[address].alignment = Alignment(horizontal="right", vertical="bottom", indent=2,
+                                              relativeIndent=1, textRotation=15, wrap_text=True)
+        hokubu._standardize_order_fonts(ws, is_tokuyou=True)
+        self.assertEqual(ws["F7"].value, "0.9kg")
+        for address in ("A7", "B7", "D7", "E7", "F7"):
+            cell = ws[address]
+            self.assertEqual(cell.alignment.horizontal, "center")
+            self.assertEqual(cell.alignment.vertical, "center")
+            self.assertEqual(cell.alignment.indent, 0)
+            self.assertEqual(cell.alignment.relativeIndent, 0)
+            self.assertEqual(cell.alignment.textRotation, 0)
+            self.assertTrue(cell.alignment.shrink_to_fit)
+            self.assertFalse(cell.alignment.wrap_text)
+            self.assertEqual(cell.font.sz, 11)
+            self.assertFalse(cell.font.bold)
+        hokubu._write_row_tokuyou(ws, 8, "11/3火", "白ねぎ", 1.13, 0.17, "kg")
+        self.assertEqual(ws["F8"].value, "1.3kg")
+
     def test_header_height_and_quantity_precision_when_space_is_limited(self):
         ws = openpyxl.Workbook().active
         ws["A2"] = "介護老人福祉施設　いわと"
@@ -131,6 +154,8 @@ class QuantityTest(unittest.TestCase):
             (4.600000000000001, "kg", "4.6kg"),
             (3.1000000000000001, "kg", "3.1kg"),
             (0.1 + 0.2, "kg", "0.3kg"),
+            (0.8999999999999999, "kg", "0.9kg"),
+            (1.2999999999999998, "kg", "1.3kg"),
             (5.0, "パック", "5パック"), (50.0, "本", "50本"),
             (1.2345678901234567, "kg", "1.2345678901234567kg"),
             (0.00000123456789, "kg", "0.00000123456789kg"),

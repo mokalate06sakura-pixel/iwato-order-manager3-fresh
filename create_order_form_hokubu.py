@@ -53,6 +53,9 @@ def _standardize_order_fonts(ws, is_tokuyou: bool):
             if cell.row == DETAIL_START_ROW - 1:
                 alignment.horizontal = "center"
                 alignment.vertical = "center"
+                alignment.indent = 0
+                alignment.relativeIndent = 0
+                alignment.textRotation = 0
                 if alignment.wrap_text:
                     # 実テンプレートの期限・納品時間は11ptで最大3行になる。
                     # この見出し行だけ、文字切れを防ぐ高さを確保する。
@@ -65,8 +68,10 @@ def _standardize_order_fonts(ws, is_tokuyou: bool):
                 alignment.vertical = "center"
                 if cell.column in (1, 2, *quantity_columns):
                     alignment.horizontal = "center"
-                if cell.column == 2:
-                    # 11ptの指定と行高・列幅を保ち、長い食品名をセル内に収める。
+                    # 使用日も含め、テンプレートの字下げ・回転を引き継がない。
+                    alignment.indent = 0
+                    alignment.relativeIndent = 0
+                    alignment.textRotation = 0
                     alignment.wrap_text = False
                     alignment.shrink_to_fit = True
                 if cell.column in quantity_columns:
