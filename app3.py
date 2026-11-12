@@ -1868,7 +1868,8 @@ def build_menu_check_workbook(reds, excluded, items_count, days, master_stats):
 # 検収簿_加工済 → 仕入先×使用日×食品名×単位で集計し、
 # A4横・1ページ4枚（2列×2段）のカードExcelを作る。
 # 余白は上下左右とも0.5cmで対称、印刷可能領域（28.7×20.0cm）を
-# 2列×2段に完全分割するので、4等分に切ると4枚とも同寸になる。
+# 2列×2段に分割し、上下カード間にはスペーサー行（0.6cm）を入れる。
+# 折って切る位置がスペーサー中央を通るため下段の日付が切れない。
 # ============================================================
 CARD_REQUIRED_COLS = ["使用日", "仕入先", "食品名", "単位",
                       "特養入所者", "特養職員", "ユーハウス"]
@@ -2004,9 +2005,11 @@ def aggregate_card_rows(source, date_filter=None):
 # ---------------- レイアウト定数（cm / pt） ----------------
 _CARD_COL_CM = [4.28, 4.28, 3.05, 2.44]   # カード内4列（合計14.05cm）
 _CARD_SPACER_CM = 0.60
-_CARD_ROW_HEIGHTS_PT = [40, 6, 128, 8, 36, 8, 8, 8, 8]  # 9行 + 残り1行で 10.0cm
-_CARD_HEIGHT_PT = 10.0 / 2.54 * 72        # 283.4646pt
-_PAGE_ROWS = 20                            # 2段 × 10行
+_CARD_ROW_HEIGHTS_PT = [40, 6, 128, 8, 36, 8, 8, 8, 8]  # 9行 + 残り1行で 1枚分
+_CARD_BASE_HEIGHT_PT = 10.0 / 2.54 * 72   # 縮小前のカード高さ 283.4646pt
+_CARD_HEIGHT_PT = 9.7 / 2.54 * 72         # 実際のカード高さ（上下間スペーサー分を差引）
+_CARD_SPACER_ROW_PT = round(0.6 / 2.54 * 72, 2)  # 上下カード間のスペーサー行 17.01pt
+_PAGE_ROWS = 21                            # カード10行＋スペーサー1行＋カード10行
 
 
 def _cm_to_col_width(cm):
@@ -2093,10 +2096,10 @@ def build_cards_workbook(cards):
     total_rows = pages * _PAGE_ROWS
 
     # 行高（1ページ合計 = 20.0cm になるよう設定）
-    heights = _CARD_ROW_HEIGHTS_PT + [
-        round(_CARD_HEIGHT_PT - sum(_CARD_ROW_HEIGHTS_PT), 2)
-    ]
-    page_heights = heights + heights  # 上段カード10行＋下段カード10行
+    scale = _CARD_HEIGHT_PT / _CARD_BASE_HEIGHT_PT
+    heights = [round(h * scale, 2) for h in _CARD_ROW_HEIGHTS_PT]
+    heights.append(round(_CARD_HEIGHT_PT - sum(heights), 2))
+    page_heights = heights + [_CARD_SPACER_ROW_PT] + heights
     for page in range(pages):
         for j, h in enumerate(page_heights):
             ws.row_dimensions[page * _PAGE_ROWS + j + 1].height = h
@@ -2105,11 +2108,11 @@ def build_cards_workbook(cards):
     for idx, card in enumerate(cards):
         page_no = idx // 4
         pos = idx % 4
-        top_row = page_no * _PAGE_ROWS + (11 if pos >= 2 else 1)
+        top_row = page_no * _PAGE_ROWS + (12 if pos >= 2 else 1)
         left_col = 6 if pos % 2 == 1 else 1
         _draw_one_card(ws, top_row, left_col, card, thick)
 
-    # 改ページ（1ページ＝20行ごと）
+    # 改ページ（1ページ＝21行ごと）
     for p in range(1, pages):
         ws.row_breaks.append(Break(id=p * _PAGE_ROWS))
 
@@ -2885,3 +2888,4 @@ elif page == "⑥ 仕入れカード作成":
                 pd.DataFrame(st.session_state["card_preview"]),
                 use_container_width=True,
             )
+
