@@ -1,11 +1,15 @@
 import io
+import json
+import os
 import re
 import tempfile
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
+import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.utils import get_column_letter
@@ -1592,7 +1596,721 @@ def create_order_workbook(uploaded_file, order_type):
     return buffer.read(), fname
 
 
+
+# ============================================================
+# ⓪ 献立チェック ロジック
 # ------------------------------------------------------------
+# 献立表（下処理室・調理室用）の食材行を読み取り、
+# グラム0（A1）／グラム空欄（A2）／完全重複（A3）を検出する。
+# 対象外：食材名「＊＊＊」（使用しない仮置き行）と、
+# 在庫マスタで B列に「○」（発注しない）がある食品。
+# ============================================================
+
+# (ブロック表示名, 名前列, グラム列) ※列は1始まり
+MENU_CHECK_BLOCKS = [
+    ("ユーハウス（いわと常食）", 1, 6),
+    ("特養・常食", 10, 15),
+    ("特養・軟菜食きざみ", 19, 24),
+    ("特養・ブレンダー食", 28, 33),
+]
+MENU_CHECK_MEALS = ("全食", "朝食", "昼食", "夕食", "３時", "3時", "間食")
+
+
+def _mc_normalize_name(name):
+    """照合用に名前を整える：先頭の「・」除去、空白（全角含む）をすべて除去。"""
+    if name is None:
+        return ""
+    s = str(name).strip().lstrip("・").strip()
+    return re.sub(r"[\s　]+", "", s)
+
+
+def _mc_parse_gram(value):
+    """'36   g ' のような文字列から数値を取り出す。取れなければ None。"""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return None if pd.isna(value) else float(value)
+    m = re.search(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", str(value))
+    return float(m.group(0)) if m else None
+
+
+def load_no_order_names(uploaded_file):
+    """在庫マスタ（アップロード）から B列「○」（発注しない）の食品名集合と統計を返す。
+
+    列構成が想定と違う場合は、黙って続行せず例外にして止める。
+    """
+    wb = openpyxl.load_workbook(
+        io.BytesIO(uploaded_file.getbuffer()), data_only=True
+    )
+    ws = wb.active
+    header = [str(ws.cell(2, c).value or "").strip() for c in (2, 3, 6)]
+    if header != ["在", "発注種類", "食品名"]:
+        wb.close()
+        raise ValueError(
+            "在庫マスタの列構成が想定と違います"
+            "（2行目の見出しが B:在 / C:発注種類 / F:食品名 ではありません）。"
+            "マスタの形式が変更された可能性があるため、処理を止めました。"
+        )
+    names = set()
+    total = 0
+    no_order_count = 0
+    for row in ws.iter_rows(min_row=4, values_only=True):
+        if len(row) < 6 or not _mc_normalize_name(row[5]):
+            continue
+        total += 1
+        if str(row[1] or "").strip() == "○":
+            no_order_count += 1
+            names.add(_mc_normalize_name(row[5]))
+    wb.close()
+    if not names:
+        raise ValueError(
+            "在庫マスタの B列「○」（発注しない）が0件でした。"
+            "マスタの形式が変更された可能性があるため、処理を止めました。"
+        )
+    stats = {
+        "ファイル名": uploaded_file.name,
+        "マスタ件数": total,
+        "発注しない（○）件数": no_order_count,
+    }
+    return names, stats
+
+
+def extract_menu_ingredients(uploaded_file):
+    """献立表（アップロード）から食材行を取り出す。"""
+    wb = openpyxl.load_workbook(
+        io.BytesIO(uploaded_file.getbuffer()), data_only=True
+    )
+    ws = wb.active
+    items = []
+    day = None
+    meal = None
+    dish_by_block = {}
+    for r in range(1, ws.max_row + 1):
+        a = ws.cell(r, 1).value
+        if isinstance(a, str) and a.startswith("年月日"):
+            day = a.replace("年月日：", "").strip()
+            meal = None
+            dish_by_block.clear()
+        if isinstance(a, str) and a.strip() in MENU_CHECK_MEALS:
+            meal = a.strip()
+            dish_by_block.clear()
+        for block_name, name_col, gram_col in MENU_CHECK_BLOCKS:
+            v = ws.cell(r, name_col).value
+            if not isinstance(v, str):
+                continue
+            if v.strip().startswith(("■", "◆")):
+                dish_by_block[block_name] = v.strip()
+                continue
+            if v.startswith("　") and v.strip():
+                name = v.strip()
+                if name.startswith("〃"):
+                    continue
+                gram_raw = ws.cell(r, gram_col).value
+                items.append(
+                    {
+                        "日付": day,
+                        "食事区分": meal,
+                        "ブロック": block_name,
+                        "料理名": dish_by_block.get(block_name, ""),
+                        "食材名": name,
+                        "グラム_raw": gram_raw,
+                        "グラム": _mc_parse_gram(gram_raw),
+                        "行": r,
+                    }
+                )
+    wb.close()
+    return items
+
+
+def run_menu_check(items, no_order_names):
+    """チェックを実行し、(赤リスト, 対象外内訳) を返す。"""
+    from collections import Counter
+
+    reds = []
+    excluded = Counter()
+    seen = {}
+    for it in items:
+        if it["食材名"] == "＊＊＊":
+            excluded["＊＊＊（使用しない仮置き）"] += 1
+            continue
+        if _mc_normalize_name(it["食材名"]) in no_order_names:
+            excluded["発注しない（在庫マスタ B列○）"] += 1
+            continue
+        base = {
+            "日付": it["日付"],
+            "食事区分": it["食事区分"],
+            "ブロック": it["ブロック"],
+            "料理名": it["料理名"],
+            "食材名": it["食材名"],
+            "グラム表示": it["グラム_raw"],
+            "行": it["行"],
+        }
+        if it["グラム"] is None:
+            reds.append(
+                {
+                    **base,
+                    "種別": "A2",
+                    "内容": "グラムが空欄（または数値でない）ため発注書に上がりません",
+                }
+            )
+        elif it["グラム"] == 0:
+            reds.append(
+                {
+                    **base,
+                    "種別": "A1",
+                    "内容": "グラムが0のため発注書に上がりません",
+                }
+            )
+        key = (
+            it["日付"],
+            it["ブロック"],
+            it["食事区分"],
+            it["料理名"],
+            it["食材名"],
+            it["グラム"],
+        )
+        if key in seen:
+            reds.append(
+                {
+                    **base,
+                    "種別": "A3",
+                    "内容": f"まったく同じ行が {seen[key]} 行目にもあります（二重発注の恐れ）",
+                }
+            )
+        else:
+            seen[key] = it["行"]
+    return reds, excluded
+
+
+def build_menu_check_workbook(reds, excluded, items_count, days, master_stats):
+    """チェック結果Excel（サマリ＋要修正シート）を bytes で返す。"""
+    from openpyxl.styles import PatternFill
+
+    wb = openpyxl.Workbook()
+    red_fill = PatternFill("solid", fgColor="FCE4E4")
+    head_fill = PatternFill("solid", fgColor="4472C4")
+    head_font = Font(color="FFFFFF", bold=True)
+
+    ws = wb.active
+    ws.title = "サマリ"
+    summary = [
+        ["献立チェック結果"],
+        [],
+        [
+            "対象期間",
+            f"{days[0]} 〜 {days[-1]}（{len(days)}日分）" if days else "不明",
+        ],
+        ["読み取った食材行数", items_count],
+        ["要修正（赤）の件数", len(reds)],
+        ["使用した在庫マスタ", master_stats["ファイル名"]],
+        ["マスタ件数", master_stats["マスタ件数"]],
+        ["発注しない（○）件数", master_stats["発注しない（○）件数"]],
+        [],
+        ["種別ごとの件数"],
+    ]
+    from collections import Counter
+
+    for kind, cnt in sorted(Counter(r["種別"] for r in reds).items()):
+        summary.append([kind, cnt])
+    summary.append([])
+    summary.append(["チェック対象外の内訳"])
+    for k, cnt in excluded.items():
+        summary.append([k, cnt])
+    for row in summary:
+        ws.append(row)
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 60
+
+    ws2 = wb.create_sheet("要修正（赤）")
+    headers = [
+        "日付",
+        "食事区分",
+        "ブロック",
+        "料理名",
+        "食材名",
+        "グラム",
+        "種別",
+        "内容",
+        "献立表の行",
+        "対応済",
+        "対応メモ",
+    ]
+    ws2.append(headers)
+    for c in range(1, len(headers) + 1):
+        cell = ws2.cell(1, c)
+        cell.fill = head_fill
+        cell.font = head_font
+    for r in reds:
+        ws2.append(
+            [
+                r["日付"],
+                r["食事区分"],
+                r["ブロック"],
+                r["料理名"],
+                r["食材名"],
+                r["グラム表示"],
+                r["種別"],
+                r["内容"],
+                r["行"],
+                "",
+                "",
+            ]
+        )
+        for c in range(1, len(headers) + 1):
+            ws2.cell(ws2.max_row, c).fill = red_fill
+    widths = [20, 10, 22, 26, 30, 10, 8, 52, 10, 8, 20]
+    for i, w in enumerate(widths, 1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+    for row in ws2.iter_rows(min_row=2):
+        row[7].alignment = Alignment(wrap_text=True, vertical="top")
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+# ============================================================
+# ⑥ 仕入れカード作成 ロジック
+# 検収簿_加工済 → 仕入先×使用日×食品名×単位で集計し、
+# A4横・1ページ4枚（2列×2段）のカードExcelを作る。
+# 余白は上下左右とも0.5cmで対称、印刷可能領域（28.7×20.0cm）を
+# 2列×2段に分割し、上下カード間にはスペーサー行（66.6pt）を入れる。
+# 折って切る位置がスペーサー中央を通るため下段の日付が切れない。
+# ============================================================
+CARD_REQUIRED_COLS = ["使用日", "仕入先", "食品名", "単位",
+                      "特養入所者", "特養職員", "ユーハウス"]
+
+
+def _card_clean_text(value):
+    """前後の空白・タブ・改行（全角スペース含む）を取り除く"""
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    text = str(value)
+    return re.sub(r"^[\s　]+|[\s　]+$", "", text)
+
+
+def _card_date_text(value):
+    """使用日を表示用文字列にする（日付型なら m/d、それ以外は文字列そのまま）"""
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return f"{value.month}/{value.day}"
+    return _card_clean_text(value)
+
+
+def _card_load_df(source):
+    df = pd.read_excel(source, sheet_name=0)
+    df.columns = [_card_clean_text(c) for c in df.columns]
+    return df
+
+
+def list_card_dates(source):
+    """検収簿_加工済に含まれる使用日を、出現順に返す"""
+    df = _card_load_df(source)
+    if "使用日" not in df.columns:
+        return []
+    dates = []
+    for v in df["使用日"]:
+        t = _card_date_text(v)
+        if t and t not in dates:
+            dates.append(t)
+    return dates
+
+
+def aggregate_card_rows(source, date_filter=None):
+    """検収簿_加工済 → カード用に集計する。
+
+    戻り値: (cards, stats)
+      cards: [{"仕入先","使用日","食品名","数量","単位"}, ...]
+             並びは 仕入先（出現順）→ 使用日（出現順）→ 品目（出現順）
+      stats: 件数などの集計情報
+    """
+    df = _card_load_df(source)
+    missing = [c for c in CARD_REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "検収簿_加工済に必要な列が見つかりません: " + "、".join(missing)
+        )
+
+    has_total = "総合計" in df.columns
+    stats = {
+        "total_rows": int(len(df)),
+        "skipped_blank_name": 0,
+        "skipped_zero_qty": 0,
+        "skipped_date": 0,
+        "total_mismatch_rows": 0,
+    }
+
+    vendor_order = {}
+    date_order = {}
+    cards_map = {}
+    card_first_idx = {}
+
+    for idx, row in df.iterrows():
+        food = _card_clean_text(row["食品名"])
+        if not food:
+            stats["skipped_blank_name"] += 1
+            continue
+        date_text = _card_date_text(row["使用日"])
+        if date_filter is not None and date_text not in date_filter:
+            stats["skipped_date"] += 1
+            continue
+
+        def _num(col):
+            try:
+                value = Decimal(str(row[col]).strip())
+                return value if value.is_finite() else Decimal(0)
+            except InvalidOperation:
+                return Decimal(0)
+
+        qty = _num("特養入所者") + _num("特養職員") + _num("ユーハウス")
+        if has_total:
+            total = _num("総合計")
+            if abs(qty - total) > Decimal("0.000000001"):
+                stats["total_mismatch_rows"] += 1
+        if qty == 0:
+            stats["skipped_zero_qty"] += 1
+            continue
+
+        vendor = _card_clean_text(row["仕入先"])
+        unit = _card_clean_text(row["単位"])
+        if vendor not in vendor_order:
+            vendor_order[vendor] = len(vendor_order)
+        dkey = (vendor, date_text)
+        if dkey not in date_order:
+            date_order[dkey] = len(date_order)
+        key = (vendor, date_text, food, unit)
+        if key not in cards_map:
+            cards_map[key] = {
+                "仕入先": vendor,
+                "使用日": date_text,
+                "食品名": food,
+                "数量": Decimal(0),
+                "単位": unit,
+            }
+            card_first_idx[key] = idx
+        cards_map[key]["数量"] += qty
+
+    def _sort_key(item):
+        key, _card = item
+        vendor, date_text, _food, _unit = key
+        return (
+            vendor_order[vendor],
+            date_order[(vendor, date_text)],
+            card_first_idx[key],
+        )
+
+    cards = []
+    for _key, card in sorted(cards_map.items(), key=_sort_key):
+        q = card["数量"]
+        card["数量"] = int(q) if q == q.to_integral_value() else float(q)
+        cards.append(card)
+
+    stats["card_count"] = len(cards)
+    stats["vendor_count"] = len(vendor_order)
+    return cards, stats
+
+
+# ---------------- レイアウト定数（cm / pt） ----------------
+_CARD_COL_CM = [4.28, 4.28, 3.05, 2.44]   # カード内4列（合計14.05cm）
+_CARD_SPACER_CM = 0.60
+_CARD_ROW_HEIGHTS_PT = [40, 6, 128, 8, 36, 8, 8, 8, 8]  # 9行 + 残り1行で 1枚分
+_CARD_BASE_HEIGHT_PT = 10.0 / 2.54 * 72   # 縮小前のカード高さ 283.4646pt
+_CARD_SPACER_ROW_PT = 66.6                # 上下カード間のスペーサー行高（pt、ユーザー指定）
+# 実際のカード高さ =（1ページ 20.0cm − スペーサー）/ 2 ≒ 250.16pt（8.82cm）
+_CARD_HEIGHT_PT = (20.0 / 2.54 * 72 - _CARD_SPACER_ROW_PT) / 2
+_PAGE_ROWS = 21                            # カード10行＋スペーサー1行＋カード10行
+
+
+def _cm_to_col_width(cm):
+    """cm → Excel列幅単位（標準フォント Calibri 11 前提）"""
+    px = cm / 2.54 * 96
+    return (px - 5) / 7
+
+
+def _card_food_font_size(food):
+    L = len(food)
+    if L >= 16:
+        return 18
+    if L >= 12:
+        return 23
+    return 30
+
+
+def _draw_one_card(ws, top_row, left_col, card, thick):
+    """1枚のカードを描く（枠は10行×4列の外周のみ太線）"""
+    for r in range(top_row, top_row + 10):
+        for c in range(left_col, left_col + 4):
+            cell = ws.cell(row=r, column=c)
+            cell.border = Border(
+                left=thick if c == left_col else None,
+                right=thick if c == left_col + 3 else None,
+                top=thick if r == top_row else None,
+                bottom=thick if r == top_row + 9 else None,
+            )
+
+    # 左上：仕入先
+    cell = ws.cell(row=top_row, column=left_col)
+    cell.value = card["仕入先"]
+    cell.font = Font(name="Meiryo UI", size=10)
+    cell.alignment = Alignment(horizontal="left", vertical="top")
+
+    # 右上：使用日
+    cell = ws.cell(row=top_row, column=left_col + 3)
+    cell.value = card["使用日"]
+    cell.font = Font(name="Meiryo UI", size=18, bold=True)
+    cell.alignment = Alignment(horizontal="right", vertical="top")
+
+    # 食品名（4列結合）
+    ws.merge_cells(
+        start_row=top_row + 2, start_column=left_col,
+        end_row=top_row + 2, end_column=left_col + 3,
+    )
+    cell = ws.cell(row=top_row + 2, column=left_col)
+    cell.value = card["食品名"]
+    cell.font = Font(
+        name="Meiryo UI", size=_card_food_font_size(card["食品名"]), bold=True
+    )
+    cell.alignment = Alignment(
+        horizontal="left", vertical="center", wrap_text=True
+    )
+
+    # 数量
+    cell = ws.cell(row=top_row + 4, column=left_col + 2)
+    cell.value = card["数量"]
+    cell.font = Font(name="Meiryo UI", size=25, bold=True)
+    cell.alignment = Alignment(horizontal="right", vertical="center")
+
+    # 単位
+    cell = ws.cell(row=top_row + 4, column=left_col + 3)
+    cell.value = card["単位"]
+    cell.font = Font(name="Meiryo UI", size=18, bold=True)
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+
+
+def build_cards_workbook(cards):
+    """カード一覧 → 仕入れカードExcel（bytes）"""
+    from openpyxl.worksheet.pagebreak import Break
+    from openpyxl.worksheet.properties import PageSetupProperties
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "仕入れカード"
+
+    # 列幅（A4横の印刷可能幅 28.7cm に一致させる）
+    widths_cm = _CARD_COL_CM + [_CARD_SPACER_CM] + _CARD_COL_CM
+    for i, cm in enumerate(widths_cm, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = _cm_to_col_width(cm)
+
+    pages = (len(cards) + 3) // 4
+    total_rows = pages * _PAGE_ROWS
+
+    # 行高（1ページ合計 = 20.0cm になるよう設定）
+    scale = _CARD_HEIGHT_PT / _CARD_BASE_HEIGHT_PT
+    heights = [h * scale for h in _CARD_ROW_HEIGHTS_PT]
+    heights.append(_CARD_HEIGHT_PT - sum(heights))
+    page_heights = heights + [_CARD_SPACER_ROW_PT] + heights
+    for page in range(pages):
+        for j, h in enumerate(page_heights):
+            ws.row_dimensions[page * _PAGE_ROWS + j + 1].height = h
+
+    thick = Side(style="medium")
+    for idx, card in enumerate(cards):
+        page_no = idx // 4
+        pos = idx % 4
+        top_row = page_no * _PAGE_ROWS + (12 if pos >= 2 else 1)
+        left_col = 6 if pos % 2 == 1 else 1
+        _draw_one_card(ws, top_row, left_col, card, thick)
+
+    # 改ページ（1ページ＝21行ごと）
+    for p in range(1, pages):
+        ws.row_breaks.append(Break(id=p * _PAGE_ROWS))
+
+    # 印刷設定：A4横、余白は上下左右とも0.5cmで対称、横は1ページ幅に合わせる
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    margin_in = 0.5 / 2.54
+    ws.page_margins = PageMargins(
+        left=margin_in, right=margin_in, top=margin_in, bottom=margin_in,
+        header=0, footer=0,
+    )
+    ws.print_area = f"A1:I{total_rows}"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+# ============================================================
+# ⑦ 登録済みマスタ（④・⑤の生成関数には必ず一時コピーを渡す）
+# ============================================================
+MASTER_DIR = Path(__file__).resolve().parent / "masters"
+MASTER_SPECS = {
+    "maruhachi_template": {
+        "label": "丸八発注書テンプレート",
+        "filename": "maruhachi_template.xlsm",
+        "sheets": ("丸八ヒロタ発注書(介護老人福祉施設いわと）", "丸八ヒロタ発注書(ユーハウス）"),
+    },
+    "maruhachi_code": {
+        "label": "丸八コード一覧",
+        "filename": "maruhachi_code.xlsm",
+        "sheets": ("タグ",),
+    },
+    "hokubu_template": {
+        "label": "北部市場発注書テンプレート",
+        "filename": "hokubu_template.xlsm",
+        "sheets": ("特養 (北部市場)", "ユーハウス(北部市場)"),
+    },
+}
+
+
+def _master_spec(master_id):
+    if master_id not in MASTER_SPECS:
+        raise ValueError("マスタの種類が正しくありません。")
+    return MASTER_SPECS[master_id]
+
+
+def _master_metadata():
+    MASTER_DIR.mkdir(parents=True, exist_ok=True)
+    path = MASTER_DIR / "meta.json"
+    if not path.exists():
+        return {}
+    try:
+        metadata = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError("masters/meta.jsonを読み込めません。登録情報を確認してください。") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError("masters/meta.jsonの形式が正しくありません。")
+    return metadata
+
+
+def get_master_status(master_id):
+    spec = _master_spec(master_id)
+    metadata = _master_metadata()
+    path = MASTER_DIR / spec["filename"]
+    record = metadata.get(master_id, {})
+    if not isinstance(record, dict):
+        record = {}
+    registered = path.is_file()
+    return {
+        "registered": registered,
+        "path": path,
+        "original_name": record.get("original_name", spec["filename"]),
+        "saved_at": record.get("saved_at", "不明"),
+        "size": path.stat().st_size if registered else 0,
+    }
+
+
+def _validate_master(master_id, uploaded_file):
+    spec = _master_spec(master_id)
+    if Path(uploaded_file.name).suffix.lower() != ".xlsm":
+        raise ValueError("xlsm形式のファイルを選択してください。")
+    payload = bytes(uploaded_file.getbuffer())
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(payload), keep_vba=True)
+    except Exception as exc:
+        raise ValueError("Excelファイルを読み込めません。正しいxlsmファイルを選択してください。") from exc
+    try:
+        missing = [name for name in spec["sheets"] if name not in workbook.sheetnames]
+        if missing:
+            raise ValueError("必要なシートがありません：" + "、".join(missing))
+    finally:
+        workbook.close()
+        if workbook.vba_archive is not None:
+            workbook.vba_archive.close()
+    return payload
+
+
+def _master_atomic_write(path, payload):
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".master_", delete=False) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(payload)
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def register_master_file(master_id, uploaded_file):
+    spec = _master_spec(master_id)
+    payload = _validate_master(master_id, uploaded_file)
+    metadata = _master_metadata()
+    path = MASTER_DIR / spec["filename"]
+    previous = path.read_bytes() if path.is_file() else None
+    original_name = str(uploaded_file.name).replace("\\", "/").rsplit("/", 1)[-1]
+    metadata[master_id] = {
+        "original_name": original_name,
+        "saved_at": datetime.now(timezone(timedelta(hours=9))).isoformat(timespec="seconds"),
+    }
+    _master_atomic_write(path, payload)
+    try:
+        _master_atomic_write(
+            MASTER_DIR / "meta.json",
+            json.dumps(metadata, ensure_ascii=False, indent=2).encode("utf-8"),
+        )
+    except Exception:
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            _master_atomic_write(path, previous)
+        raise
+    return get_master_status(master_id)
+
+
+def copy_master_to_temp(master_id, destination, override=None):
+    """今回限りのファイルを優先し、登録済みの原本には手を加えない。"""
+    spec = _master_spec(master_id)
+    if override is not None:
+        payload = _validate_master(master_id, override)
+    else:
+        status = get_master_status(master_id)
+        if not status["registered"]:
+            raise ValueError(
+                f"{spec['label']}が未登録です。⑦で登録するか、今回だけのファイルを選んでください。"
+            )
+        payload = status["path"].read_bytes()
+    destination = Path(destination)
+    destination.write_bytes(payload)
+    return destination
+
+
+def show_master_status(master_id):
+    """登録情報のエラーは該当画面内で表示し、ほかの機能を止めない。"""
+    try:
+        status = get_master_status(master_id)
+    except Exception as exc:
+        st.error(str(exc))
+        return {"registered": False}
+    if status["registered"]:
+        st.success("登録済み")
+        st.write(f"ファイル名：{status['original_name']}")
+        st.caption(f"登録日時：{status['saved_at']} ／ サイズ：{status['size']:,} bytes")
+    else:
+        st.info("未登録です。⑦で登録するか、今回だけのファイルを選んでください。")
+    return status
+
+
+def _clear_menu_check_result():
+    for suffix in ("data", "fname", "reds", "summary"):
+        st.session_state.pop("menu_check_" + suffix, None)
+
+
+def _clear_card_result():
+    for suffix in ("data", "fname", "stats", "preview"):
+        st.session_state.pop("card_" + suffix, None)
+
+
+def _card_source_changed():
+    _clear_card_result()
+    st.session_state.pop("card_dates", None)
+
+
 # ------------------------------------------------------------
 # 🖥️ UI構築
 # ------------------------------------------------------------
@@ -1625,11 +2343,14 @@ with st.sidebar:
     page = st.radio(
         "画面を選択してください",
         [
+            "⓪ 献立チェック",
             "① 検収簿整形",
             "② 業者別仕訳表",
             "③ 注文書作成",
             "④ 丸八発注書作成",
             "⑤ 北部市場発注書作成",
+            "⑥ 仕入れカード作成",
+            "⑦ マスタ管理",
         ],
         key="main_page_selector",
         label_visibility="collapsed",
@@ -1642,10 +2363,142 @@ with st.sidebar:
     )
 
 
+
+# ============================================================
+# ⓪ 献立チェック
+# ============================================================
+if page == "⓪ 献立チェック":
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🔍 ⓪ 献立チェック</div>'
+        '<div class="main-feature-sub">'
+        '献立を印刷する前に、グラム0や重複で<br>'
+        '発注書に上がらない食材がないか確認します。'
+        '</div>'
+        '<div class="main-note-box">'
+        '📌 献立表と在庫マスタ一覧表の<br>'
+        '<b>2つのファイル</b> を選択してください。'
+        '</div>'
+        '</div>',
+    )
+
+    mc_col1, mc_col2 = st.columns(2)
+
+    with mc_col1:
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">📄 献立表</div>'
+            '<div class="mini-card-sub">下処理室・調理室用の献立表（1週間〜1か月分）</div>'
+            '</div>',
+        )
+        menu_file = st.file_uploader(
+            "献立表（xlsx）",
+            type=["xlsx"],
+            key="menu_check_menu",
+            on_change=_clear_menu_check_result,
+        )
+
+    with mc_col2:
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">📦 在庫マスタ一覧表</div>'
+            '<div class="mini-card-sub">B列○（発注しない）の判定に使います</div>'
+            '</div>',
+        )
+        master_file = st.file_uploader(
+            "在庫マスタ一覧表（xlsx）",
+            type=["xlsx"],
+            key="menu_check_master",
+            on_change=_clear_menu_check_result,
+        )
+
+    if st.button(
+        "🔍 献立チェックを実行する",
+        key="menu_check_run",
+        use_container_width=True,
+    ):
+        if not (menu_file and master_file):
+            st.warning("⚠ 献立表と在庫マスタ一覧表の両方を選択してください。")
+        else:
+            try:
+                with st.spinner("献立をチェックしています…"):
+                    no_order_names, master_stats = load_no_order_names(master_file)
+                    menu_items = extract_menu_ingredients(menu_file)
+                    mc_reds, mc_excluded = run_menu_check(menu_items, no_order_names)
+                    mc_days = sorted(
+                        {it["日付"] for it in menu_items if it["日付"]}
+                    )
+                    st.session_state["menu_check_data"] = build_menu_check_workbook(
+                        mc_reds,
+                        mc_excluded,
+                        len(menu_items),
+                        mc_days,
+                        master_stats,
+                    )
+                    st.session_state["menu_check_fname"] = "献立チェック結果.xlsx"
+                    st.session_state["menu_check_reds"] = mc_reds
+                    st.session_state["menu_check_summary"] = {
+                        "食材行数": len(menu_items),
+                        "日数": len(mc_days),
+                        "対象外": dict(mc_excluded),
+                        "マスタ○件数": master_stats["発注しない（○）件数"],
+                        "マスタファイル名": master_stats["ファイル名"],
+                        "マスタ件数": master_stats["マスタ件数"],
+                    }
+                st.success("🌸 献立チェックが完了しました！")
+            except Exception as e:
+                st.session_state.pop("menu_check_data", None)
+                st.session_state.pop("menu_check_reds", None)
+                st.session_state.pop("menu_check_summary", None)
+                st.error("献立チェック中にエラーが発生しました。")
+                st.exception(e)
+
+    if (
+        "menu_check_data" in st.session_state
+        and "menu_check_reds" in st.session_state
+    ):
+        mc_reds = st.session_state["menu_check_reds"]
+        mc_summary = st.session_state.get("menu_check_summary", {})
+
+        st.markdown("### 📋 チェック結果")
+        st.write(
+            f"対象：{mc_summary.get('日数', 0)}日分／食材 {mc_summary.get('食材行数', 0)} 行"
+            f"（発注しない○は {mc_summary.get('マスタ○件数', 0)} 件で判定）"
+        )
+        st.caption(
+            f"使用した在庫マスタ：{mc_summary.get('マスタファイル名', '')} ／ "
+            f"総件数：{mc_summary.get('マスタ件数', 0)}件 ／ "
+            f"○：{mc_summary.get('マスタ○件数', 0)}件"
+        )
+        for k, cnt in mc_summary.get("対象外", {}).items():
+            st.write(f"・対象外：{k} {cnt} 行")
+
+        if mc_reds:
+            st.warning(f"⚠ 要修正（赤）が {len(mc_reds)} 件あります。献立を直してから印刷してください。")
+            st.dataframe(
+                pd.DataFrame(mc_reds)[
+                    ["日付", "食事区分", "ブロック", "料理名", "食材名", "グラム表示", "種別", "内容"]
+                ].rename(columns={"グラム表示": "グラム"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.success("🌸 要修正（赤）はありませんでした。")
+
+        st.download_button(
+            label="📥 献立チェック結果をダウンロード",
+            data=st.session_state["menu_check_data"],
+            file_name=st.session_state["menu_check_fname"],
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="menu_check_download",
+            use_container_width=True,
+        )
+
 # ============================================================
 # ① 検収簿整形
 # ============================================================
-if page == "① 検収簿整形":
+elif page == "① 検収簿整形":
 
     st.html(
         '<div class="main-feature-card">'
@@ -1848,7 +2701,7 @@ elif page == "④ 丸八発注書作成":
         '検収簿_加工済・丸八発注書テンプレート・<br>'
         '丸八コード一覧から、特養用とユーハウス用の発注書を同時に作成します。'
         '</div>'
-        '<div class="main-note-box">📌 下の3つのファイルをすべて選択してください。</div>'
+        '<div class="main-note-box">📌 検収簿_加工済を選択してください。テンプレートとコード一覧は登録済みマスタを使います。</div>'
         '</div>',
     )
 
@@ -1874,11 +2727,7 @@ elif page == "④ 丸八発注書作成":
             '<div class="mini-card-sub">丸八ヒロタ専用の発注書テンプレート</div>'
             '</div>',
         )
-        template_file = st.file_uploader(
-            "丸八発注書テンプレ（xlsm）",
-            type=["xlsm"],
-            key="tpl_maruhachi",
-        )
+        maruhachi_template_status = show_master_status("maruhachi_template")
 
     with mcol3:
         st.html(
@@ -1887,6 +2736,16 @@ elif page == "④ 丸八発注書作成":
             '<div class="mini-card-sub">タグシート付きのコード対応表</div>'
             '</div>',
         )
+        maruhachi_code_status = show_master_status("maruhachi_code")
+
+    with st.expander("今回だけ別のファイルを使う", expanded=False):
+        st.caption("ここで選んだファイルは今回の作成だけに使い、登録内容は変更しません。")
+        template_file = st.file_uploader(
+            "丸八発注書テンプレ（xlsm）",
+            type=["xlsm"],
+            key="tpl_maruhachi",
+        )
+
         tag_file = st.file_uploader(
             "丸八コード一覧（xlsm）",
             type=["xlsm"],
@@ -1905,8 +2764,13 @@ elif page == "④ 丸八発注書作成":
             if MARUHACHI_IMPORT_ERROR is not None:
                 st.exception(MARUHACHI_IMPORT_ERROR)
 
-        elif not (kenshu_file and template_file and tag_file):
-            st.warning("⚠ 3つのファイルをすべて選択してください。")
+        elif not kenshu_file:
+            st.warning("⚠ 検収簿_加工済を選択してください。")
+
+        elif not (template_file or maruhachi_template_status["registered"]) or not (
+            tag_file or maruhachi_code_status["registered"]
+        ):
+            st.error("テンプレートとコード一覧を⑦で登録するか、今回だけのファイルを選んでください。")
 
         else:
             try:
@@ -1919,8 +2783,8 @@ elif page == "④ 丸八発注書作成":
                         m_path = td / "tag.xlsm"
 
                         k_path.write_bytes(kenshu_file.getbuffer())
-                        t_path.write_bytes(template_file.getbuffer())
-                        m_path.write_bytes(tag_file.getbuffer())
+                        copy_master_to_temp("maruhachi_template", t_path, template_file)
+                        copy_master_to_temp("maruhachi_code", m_path, tag_file)
 
                         out_dir = td / "out"
 
@@ -1991,7 +2855,7 @@ elif page == "⑤ 北部市場発注書作成":
         '特養用・ユーハウス用の発注書を同時に作成します。'
         '</div>'
         '<div class="main-note-green">'
-        '🌿 2つのファイルを選択して、「北部市場発注書を作成」を押してください。'
+        '🌿 検収簿_加工済を選択して、「北部市場発注書を作成」を押してください。テンプレートは登録済みマスタを使います。'
         '</div>'
         '</div>',
     )
@@ -2018,6 +2882,10 @@ elif page == "⑤ 北部市場発注書作成":
             '<div class="mini-card-sub">北部市場専用の発注書テンプレート</div>'
             '</div>',
         )
+        hokubu_template_status = show_master_status("hokubu_template")
+
+    with st.expander("今回だけ別のファイルを使う", expanded=False):
+        st.caption("ここで選んだファイルは今回の作成だけに使い、登録内容は変更しません。")
         hokubu_template = st.file_uploader(
             "北部市場発注書テンプレート（xlsm）",
             type=["xlsm"],
@@ -2036,10 +2904,11 @@ elif page == "⑤ 北部市場発注書作成":
             if HOKUBU_IMPORT_ERROR is not None:
                 st.exception(HOKUBU_IMPORT_ERROR)
 
-        elif not (hokubu_kenshu and hokubu_template):
-            st.warning(
-                "⚠ 検収簿_加工済 と 北部市場テンプレートを両方選択してください。"
-            )
+        elif not hokubu_kenshu:
+            st.warning("⚠ 検収簿_加工済を選択してください。")
+
+        elif not (hokubu_template or hokubu_template_status["registered"]):
+            st.error("北部市場テンプレートを⑦で登録するか、今回だけのファイルを選んでください。")
 
         else:
             try:
@@ -2051,7 +2920,7 @@ elif page == "⑤ 北部市場発注書作成":
                         t_path = td / "template.xlsm"
 
                         k_path.write_bytes(hokubu_kenshu.getbuffer())
-                        t_path.write_bytes(hokubu_template.getbuffer())
+                        copy_master_to_temp("hokubu_template", t_path, hokubu_template)
 
                         out_dir = td / "out"
 
@@ -2105,4 +2974,160 @@ elif page == "⑤ 北部市場発注書作成":
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 key="download_hokubu_yuhouse",
                 use_container_width=True,
+            )
+
+# ============================================================
+# ⑥ 仕入れカード作成
+# ============================================================
+elif page == "⑥ 仕入れカード作成":
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🎴 ⑥ 仕入れカードを作成</div>'
+        '<div class="main-feature-sub">'
+        '検収簿_加工済から、仕入先ごとの仕入れカード（A4横・1ページ4枚）を作成します。<br>'
+        'カードの数量は、特養入所者＋特養職員＋ユーハウスの合計です。'
+        '</div>'
+        '<div class="main-note-green">'
+        '🌿 カードは4枚とも同じ大きさになるよう寸法を統一しています。'
+        '印刷した紙を半分・半分に切ると、4枚とも約14.9cm × 10.5cm になります。'
+        '</div>'
+        '</div>',
+    )
+
+    st.html(
+        '<div class="mini-card">'
+        '<div class="mini-card-title">📄 検収簿_加工済</div>'
+        '<div class="mini-card-sub">「① 検収簿整形」で作成したファイルを使用してください</div>'
+        '</div>',
+    )
+    card_kenshu = st.file_uploader(
+        "検収簿_加工済（xlsx）",
+        type=["xlsx"],
+        key="card_kenshu",
+        on_change=_card_source_changed,
+    )
+
+    card_dates_selected = None
+    if card_kenshu is not None:
+        try:
+            all_dates = list_card_dates(card_kenshu)
+        except Exception:
+            all_dates = []
+        if all_dates:
+            card_dates_selected = st.multiselect(
+                "カードを作る使用日",
+                all_dates,
+                default=all_dates,
+                key="card_dates",
+                on_change=_clear_card_result,
+            )
+
+    btn_card = st.button(
+        "🎴 仕入れカードを作成する",
+        key="card_run",
+        use_container_width=True,
+    )
+
+    if btn_card:
+        if not card_kenshu:
+            st.warning("⚠ 検収簿_加工済 を選択してください。")
+        elif card_dates_selected == []:
+            _clear_card_result()
+            st.warning("⚠ カードを作る使用日を1日以上選択してください。")
+        else:
+            try:
+                with st.spinner("仕入れカードを作成しています…"):
+                    date_filter = (
+                        set(card_dates_selected)
+                        if card_dates_selected is not None
+                        else None
+                    )
+                    cards, card_stats = aggregate_card_rows(
+                        card_kenshu, date_filter=date_filter
+                    )
+                    if not cards:
+                        _clear_card_result()
+                        st.session_state["card_stats"] = card_stats
+                        st.warning(
+                            "⚠ カードになる品目がありませんでした"
+                            "（数量0の品目はカードにしません）。"
+                        )
+                    else:
+                        st.session_state["card_data"] = build_cards_workbook(cards)
+                        st.session_state["card_fname"] = "仕入れカード.xlsx"
+                        st.session_state["card_stats"] = card_stats
+                        st.session_state["card_preview"] = cards[:100]
+                        st.success(
+                            f"🌸 仕入れカードを作成しました！"
+                            f"（{card_stats['card_count']}枚 / "
+                            f"{(card_stats['card_count'] + 3) // 4}ページ、"
+                            f"仕入先 {card_stats['vendor_count']}社）"
+                        )
+            except Exception as e:
+                _clear_card_result()
+                st.error("仕入れカードの作成中にエラーが発生しました。")
+                st.exception(e)
+
+    if "card_stats" in st.session_state:
+        card_stats = st.session_state["card_stats"]
+        st.info(
+            f"食品名が空欄のため除外：{card_stats['skipped_blank_name']}件 ／ "
+            f"数量0のため除外：{card_stats['skipped_zero_qty']}件 ／ "
+            f"総合計との不一致：{card_stats['total_mismatch_rows']}件"
+        )
+        if card_stats["total_mismatch_rows"]:
+            st.warning("カードの数量は「総合計」列を使わず、特養入所者＋特養職員＋ユーハウスで計算しています。")
+
+    if "card_data" in st.session_state:
+        st.markdown("### 📥 作成済みファイル")
+        st.download_button(
+            label="📥 仕入れカードをダウンロード",
+            data=st.session_state["card_data"],
+            file_name=st.session_state.get("card_fname", "仕入れカード.xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="card_download",
+            use_container_width=True,
+        )
+        if st.session_state.get("card_preview"):
+            st.markdown("### 🎴 カード内容（先頭100件まで）")
+            st.dataframe(
+                pd.DataFrame(st.session_state["card_preview"]),
+                use_container_width=True,
+            )
+
+
+# ============================================================
+# ⑦ マスタ管理
+# ============================================================
+elif page == "⑦ マスタ管理":
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">📁 ⑦ マスタ管理</div>'
+        '<div class="main-feature-sub">④・⑤で使うテンプレートとコード一覧を登録・差し替えます。</div>'
+        '</div>',
+    )
+    st.warning("登録すると前のファイルに上書きされ、元には戻せません。必要なら先にダウンロードしてください。")
+    for master_id, spec in MASTER_SPECS.items():
+        st.html(f'<div class="mini-card"><div class="mini-card-title">📄 {spec["label"]}</div></div>')
+        uploaded_master = st.file_uploader(
+            f'{spec["label"]}（xlsm）', type=["xlsm"], key=f"master_upload_{master_id}"
+        )
+        if st.button("このファイルで登録する（差し替え）", key=f"master_register_{master_id}"):
+            if uploaded_master is None:
+                st.warning("登録するxlsmファイルを選択してください。")
+            else:
+                try:
+                    register_master_file(master_id, uploaded_master)
+                    st.success(f'{spec["label"]}を登録しました。')
+                except Exception as exc:
+                    st.error(f"登録できませんでした：{exc}")
+        status = show_master_status(master_id)
+        if status["registered"]:
+            st.download_button(
+                "登録済みファイルをダウンロード",
+                data=status["path"].read_bytes(),
+                file_name=status["original_name"],
+                mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+                key=f"master_download_{master_id}",
             )
