@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.utils import get_column_letter
@@ -1592,6 +1593,276 @@ def create_order_workbook(uploaded_file, order_type):
     return buffer.read(), fname
 
 
+
+# ============================================================
+# ⓪ 献立チェック ロジック
+# ------------------------------------------------------------
+# 献立表（下処理室・調理室用）の食材行を読み取り、
+# グラム0（A1）／グラム空欄（A2）／完全重複（A3）を検出する。
+# 対象外：食材名「＊＊＊」（使用しない仮置き行）と、
+# 在庫マスタで B列に「○」（発注しない）がある食品。
+# ============================================================
+
+# (ブロック表示名, 名前列, グラム列) ※列は1始まり
+MENU_CHECK_BLOCKS = [
+    ("ユーハウス（いわと常食）", 1, 6),
+    ("特養・常食", 10, 15),
+    ("特養・軟菜食きざみ", 19, 24),
+    ("特養・ブレンダー食", 28, 33),
+]
+MENU_CHECK_MEALS = ("朝食", "昼食", "夕食")
+
+
+def _mc_normalize_name(name):
+    """照合用に名前を整える：先頭の「・」除去、空白（全角含む）をすべて除去。"""
+    if name is None:
+        return ""
+    s = str(name).strip().lstrip("・").strip()
+    return re.sub(r"[\s　]+", "", s)
+
+
+def _mc_parse_gram(value):
+    """'36   g ' のような文字列から数値を取り出す。取れなければ None。"""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    m = re.search(r"[\d.]+", str(value))
+    return float(m.group(0)) if m else None
+
+
+def load_no_order_names(uploaded_file):
+    """在庫マスタ（アップロード）から B列「○」（発注しない）の食品名集合と統計を返す。
+
+    列構成が想定と違う場合は、黙って続行せず例外にして止める。
+    """
+    wb = openpyxl.load_workbook(
+        io.BytesIO(uploaded_file.getbuffer()), data_only=True
+    )
+    ws = wb.active
+    header = [ws.cell(2, c).value for c in (2, 3, 6)]
+    if (
+        header[0] != "在"
+        or header[1] != "発注種類"
+        or not (header[2] and "食品名" in str(header[2]))
+    ):
+        raise ValueError(
+            "在庫マスタの列構成が想定と違います"
+            "（2行目の見出しが B:在 / C:発注種類 / F:食品名 ではありません）。"
+            "マスタの形式が変更された可能性があるため、処理を止めました。"
+        )
+    names = set()
+    total = 0
+    for row in ws.iter_rows(min_row=4, values_only=True):
+        if row[0] is None:
+            continue
+        total += 1
+        if row[1] == "○" and row[5]:
+            names.add(_mc_normalize_name(row[5]))
+    if not names:
+        raise ValueError(
+            "在庫マスタの B列「○」（発注しない）が0件でした。"
+            "マスタの形式が変更された可能性があるため、処理を止めました。"
+        )
+    stats = {
+        "ファイル名": uploaded_file.name,
+        "マスタ件数": total,
+        "発注しない（○）件数": len(names),
+    }
+    return names, stats
+
+
+def extract_menu_ingredients(uploaded_file):
+    """献立表（アップロード）から食材行を取り出す。"""
+    wb = openpyxl.load_workbook(
+        io.BytesIO(uploaded_file.getbuffer()), data_only=True
+    )
+    ws = wb.active
+    items = []
+    day = None
+    meal = None
+    dish_by_block = {}
+    for r in range(1, ws.max_row + 1):
+        a = ws.cell(r, 1).value
+        if isinstance(a, str) and a.startswith("年月日"):
+            day = a.replace("年月日：", "").strip()
+        if isinstance(a, str) and a.strip() in MENU_CHECK_MEALS:
+            meal = a.strip()
+        for block_name, name_col, gram_col in MENU_CHECK_BLOCKS:
+            v = ws.cell(r, name_col).value
+            if not isinstance(v, str):
+                continue
+            if v.strip().startswith(("■", "◆")):
+                dish_by_block[block_name] = v.strip()
+                continue
+            if v.startswith("　") and v.strip():
+                name = v.strip()
+                if name.startswith("〃"):
+                    continue
+                gram_raw = ws.cell(r, gram_col).value
+                items.append(
+                    {
+                        "日付": day,
+                        "食事区分": meal,
+                        "ブロック": block_name,
+                        "料理名": dish_by_block.get(block_name, ""),
+                        "食材名": name,
+                        "グラム_raw": gram_raw,
+                        "グラム": _mc_parse_gram(gram_raw),
+                        "行": r,
+                    }
+                )
+    return items
+
+
+def run_menu_check(items, no_order_names):
+    """チェックを実行し、(赤リスト, 対象外内訳) を返す。"""
+    from collections import Counter
+
+    reds = []
+    excluded = Counter()
+    seen = {}
+    for it in items:
+        if it["食材名"] == "＊＊＊":
+            excluded["＊＊＊（使用しない仮置き）"] += 1
+            continue
+        if _mc_normalize_name(it["食材名"]) in no_order_names:
+            excluded["発注しない（在庫マスタ B列○）"] += 1
+            continue
+        base = {
+            "日付": it["日付"],
+            "食事区分": it["食事区分"],
+            "ブロック": it["ブロック"],
+            "料理名": it["料理名"],
+            "食材名": it["食材名"],
+            "グラム表示": it["グラム_raw"],
+            "行": it["行"],
+        }
+        if it["グラム"] is None:
+            reds.append(
+                {
+                    **base,
+                    "種別": "A2",
+                    "内容": "グラムが空欄（または数値でない）ため発注書に上がりません",
+                }
+            )
+        elif it["グラム"] == 0:
+            reds.append(
+                {
+                    **base,
+                    "種別": "A1",
+                    "内容": "グラムが0のため発注書に上がりません",
+                }
+            )
+        key = (
+            it["日付"],
+            it["ブロック"],
+            it["食事区分"],
+            it["料理名"],
+            it["食材名"],
+            it["グラム"],
+        )
+        if key in seen:
+            reds.append(
+                {
+                    **base,
+                    "種別": "A3",
+                    "内容": f"まったく同じ行が {seen[key]} 行目にもあります（二重発注の恐れ）",
+                }
+            )
+        else:
+            seen[key] = it["行"]
+    return reds, excluded
+
+
+def build_menu_check_workbook(reds, excluded, items_count, days, master_stats):
+    """チェック結果Excel（サマリ＋要修正シート）を bytes で返す。"""
+    from openpyxl.styles import PatternFill
+
+    wb = openpyxl.Workbook()
+    red_fill = PatternFill("solid", fgColor="FCE4E4")
+    head_fill = PatternFill("solid", fgColor="4472C4")
+    head_font = Font(color="FFFFFF", bold=True)
+
+    ws = wb.active
+    ws.title = "サマリ"
+    summary = [
+        ["献立チェック結果"],
+        [],
+        [
+            "対象期間",
+            f"{days[0]} 〜 {days[-1]}（{len(days)}日分）" if days else "不明",
+        ],
+        ["読み取った食材行数", items_count],
+        ["要修正（赤）の件数", len(reds)],
+        ["使用した在庫マスタ", master_stats["ファイル名"]],
+        ["マスタ件数", master_stats["マスタ件数"]],
+        ["発注しない（○）件数", master_stats["発注しない（○）件数"]],
+        [],
+        ["種別ごとの件数"],
+    ]
+    from collections import Counter
+
+    for kind, cnt in sorted(Counter(r["種別"] for r in reds).items()):
+        summary.append([kind, cnt])
+    summary.append([])
+    summary.append(["チェック対象外の内訳"])
+    for k, cnt in excluded.items():
+        summary.append([k, cnt])
+    for row in summary:
+        ws.append(row)
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.column_dimensions["A"].width = 34
+    ws.column_dimensions["B"].width = 60
+
+    ws2 = wb.create_sheet("要修正（赤）")
+    headers = [
+        "日付",
+        "食事区分",
+        "ブロック",
+        "料理名",
+        "食材名",
+        "グラム",
+        "種別",
+        "内容",
+        "献立表の行",
+        "対応済",
+        "対応メモ",
+    ]
+    ws2.append(headers)
+    for c in range(1, len(headers) + 1):
+        cell = ws2.cell(1, c)
+        cell.fill = head_fill
+        cell.font = head_font
+    for r in reds:
+        ws2.append(
+            [
+                r["日付"],
+                r["食事区分"],
+                r["ブロック"],
+                r["料理名"],
+                r["食材名"],
+                r["グラム表示"],
+                r["種別"],
+                r["内容"],
+                r["行"],
+                "",
+                "",
+            ]
+        )
+        for c in range(1, len(headers) + 1):
+            ws2.cell(ws2.max_row, c).fill = red_fill
+    widths = [20, 10, 22, 26, 30, 10, 8, 52, 10, 8, 20]
+    for i, w in enumerate(widths, 1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+    for row in ws2.iter_rows(min_row=2):
+        row[7].alignment = Alignment(wrap_text=True, vertical="top")
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
 # ------------------------------------------------------------
 # ------------------------------------------------------------
 # 🖥️ UI構築
@@ -1625,6 +1896,7 @@ with st.sidebar:
     page = st.radio(
         "画面を選択してください",
         [
+            "⓪ 献立チェック",
             "① 検収簿整形",
             "② 業者別仕訳表",
             "③ 注文書作成",
@@ -1642,10 +1914,133 @@ with st.sidebar:
     )
 
 
+
+# ============================================================
+# ⓪ 献立チェック
+# ============================================================
+if page == "⓪ 献立チェック":
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🔍 ⓪ 献立チェック</div>'
+        '<div class="main-feature-sub">'
+        '献立を印刷する前に、グラム0や重複で<br>'
+        '発注書に上がらない食材がないか確認します。'
+        '</div>'
+        '<div class="main-note-box">'
+        '📌 献立表と在庫マスタ一覧表の<br>'
+        '<b>2つのファイル</b> を選択してください。'
+        '</div>'
+        '</div>',
+    )
+
+    mc_col1, mc_col2 = st.columns(2)
+
+    with mc_col1:
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">📄 献立表</div>'
+            '<div class="mini-card-sub">下処理室・調理室用の献立表（1週間〜1か月分）</div>'
+            '</div>',
+        )
+        menu_file = st.file_uploader(
+            "献立表（xlsx）",
+            type=["xlsx"],
+            key="menu_check_menu",
+        )
+
+    with mc_col2:
+        st.html(
+            '<div class="mini-card">'
+            '<div class="mini-card-title">📦 在庫マスタ一覧表</div>'
+            '<div class="mini-card-sub">B列○（発注しない）の判定に使います</div>'
+            '</div>',
+        )
+        master_file = st.file_uploader(
+            "在庫マスタ一覧表（xlsx）",
+            type=["xlsx"],
+            key="menu_check_master",
+        )
+
+    if st.button(
+        "🔍 献立チェックを実行する",
+        key="btn_menu_check",
+        use_container_width=True,
+    ):
+        if not (menu_file and master_file):
+            st.warning("⚠ 献立表と在庫マスタ一覧表の両方を選択してください。")
+        else:
+            try:
+                with st.spinner("献立をチェックしています…"):
+                    no_order_names, master_stats = load_no_order_names(master_file)
+                    menu_items = extract_menu_ingredients(menu_file)
+                    mc_reds, mc_excluded = run_menu_check(menu_items, no_order_names)
+                    mc_days = sorted(
+                        {it["日付"] for it in menu_items if it["日付"]}
+                    )
+                    st.session_state["menu_check_data"] = build_menu_check_workbook(
+                        mc_reds,
+                        mc_excluded,
+                        len(menu_items),
+                        mc_days,
+                        master_stats,
+                    )
+                    st.session_state["menu_check_fname"] = "献立チェック結果.xlsx"
+                    st.session_state["menu_check_reds"] = mc_reds
+                    st.session_state["menu_check_summary"] = {
+                        "食材行数": len(menu_items),
+                        "日数": len(mc_days),
+                        "対象外": dict(mc_excluded),
+                        "マスタ○件数": master_stats["発注しない（○）件数"],
+                    }
+                st.success("🌸 献立チェックが完了しました！")
+            except Exception as e:
+                st.session_state.pop("menu_check_data", None)
+                st.session_state.pop("menu_check_reds", None)
+                st.session_state.pop("menu_check_summary", None)
+                st.error("献立チェック中にエラーが発生しました。")
+                st.exception(e)
+
+    if (
+        "menu_check_data" in st.session_state
+        and "menu_check_reds" in st.session_state
+    ):
+        mc_reds = st.session_state["menu_check_reds"]
+        mc_summary = st.session_state.get("menu_check_summary", {})
+
+        st.markdown("### 📋 チェック結果")
+        st.write(
+            f"対象：{mc_summary.get('日数', 0)}日分／食材 {mc_summary.get('食材行数', 0)} 行"
+            f"（発注しない○は {mc_summary.get('マスタ○件数', 0)} 件で判定）"
+        )
+        for k, cnt in mc_summary.get("対象外", {}).items():
+            st.write(f"・対象外：{k} {cnt} 行")
+
+        if mc_reds:
+            st.warning(f"⚠ 要修正（赤）が {len(mc_reds)} 件あります。献立を直してから印刷してください。")
+            st.dataframe(
+                pd.DataFrame(mc_reds)[
+                    ["日付", "食事区分", "ブロック", "料理名", "食材名", "グラム表示", "種別", "内容"]
+                ].rename(columns={"グラム表示": "グラム"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.success("🌸 要修正（赤）はありませんでした。")
+
+        st.download_button(
+            label="📥 献立チェック結果をダウンロード",
+            data=st.session_state["menu_check_data"],
+            file_name=st.session_state["menu_check_fname"],
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_menu_check",
+            use_container_width=True,
+        )
+
 # ============================================================
 # ① 検収簿整形
 # ============================================================
-if page == "① 検収簿整形":
+elif page == "① 検収簿整形":
 
     st.html(
         '<div class="main-feature-card">'
