@@ -1,9 +1,88 @@
+import math
 import re
+from copy import copy
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Optional
 
 import openpyxl
 import pandas as pd
+from openpyxl.cell.cell import MergedCell
+
+# 出力する北部市場発注書の書体を統一する
+ORDER_FONT_NAME = "游ゴシック"
+ORDER_BODY_FONT_SIZE = 11
+ORDER_TITLE_FONT_SIZE = 14
+ORDER_DATE_FONT_SIZE = 12
+
+
+def _standardize_order_fonts(ws, is_tokuyou: bool):
+    """罫線・寸法・印刷設定を保ち、出力シートの書体と配置を揃える。"""
+    date_address = TOKUYOU_DELIVERY_CELL if is_tokuyou else YUHOUSE_DELIVERY_CELL
+    quantity_columns = (4, 5, 6) if is_tokuyou else (4,)
+    for row in ws:
+        for cell in row:
+            if isinstance(cell, MergedCell):
+                continue
+            font = copy(cell.font)
+            font.name = ORDER_FONT_NAME
+            font.scheme = None
+            font.sz = ORDER_BODY_FONT_SIZE
+            font.bold = False
+            text = re.sub(r"\s+", "", str(cell.value or ""))
+            if cell.coordinate == date_address:
+                font.sz = ORDER_DATE_FONT_SIZE
+                font.bold = True
+            elif cell.row < DETAIL_START_ROW and (
+                SUPPLIER_NAME in text or "御中" in text or "仕入先" in text
+            ):
+                font.sz = ORDER_DATE_FONT_SIZE
+                font.bold = True
+            elif cell.coordinate == "A2" or (
+                cell.row <= 3 and any(
+                    word in text for word in ("発注", "特養", "ユーハウス", "施設名")
+                )
+            ):
+                font.sz = ORDER_TITLE_FONT_SIZE
+                font.bold = True
+            elif cell.row == DETAIL_START_ROW - 1:
+                font.bold = True
+            cell.font = font
+
+            alignment = copy(cell.alignment)
+            if cell.row == DETAIL_START_ROW - 1:
+                alignment.horizontal = "center"
+                alignment.vertical = "center"
+                alignment.indent = 0
+                alignment.relativeIndent = 0
+                alignment.textRotation = 0
+                if alignment.wrap_text:
+                    # 実テンプレートの期限・納品時間は11ptで最大3行になる。
+                    # この見出し行だけ、文字切れを防ぐ高さを確保する。
+                    dimension = ws.row_dimensions[cell.row]
+                    dimension.height = max(
+                        dimension.height or ws.sheet_format.defaultRowHeight or 15,
+                        ORDER_BODY_FONT_SIZE * 3.6,
+                    )
+            elif DETAIL_START_ROW <= cell.row <= DETAIL_END_ROW:
+                alignment.vertical = "center"
+                if cell.column in (1, 2, *quantity_columns):
+                    alignment.horizontal = "center"
+                    # 使用日も含め、テンプレートの字下げ・回転を引き継がない。
+                    alignment.indent = 0
+                    alignment.relativeIndent = 0
+                    alignment.textRotation = 0
+                    alignment.wrap_text = False
+                    alignment.shrink_to_fit = True
+                if cell.column in quantity_columns:
+                    alignment.wrap_text = False
+                    alignment.shrink_to_fit = True
+                    cell.number_format = "General"
+                    if isinstance(cell.value, (int, float, Decimal)):
+                        # 狭い数量欄でも科学表記による桁の省略を避ける。
+                        places = max(0, -_decimal_quantity(cell.value).normalize().as_tuple().exponent)
+                        cell.number_format = "0" + ("." + "#" * places if places else "")
+            cell.alignment = alignment
 
 
 SUPPLIER_NAME = "北部市場販売"
@@ -62,6 +141,13 @@ def _find_col(df: pd.DataFrame, keywords: list[str]) -> Optional[str]:
 def _copy_sheet(wb, base_ws, title):
     ws = wb.copy_worksheet(base_ws)
     ws.title = _sanitize_sheet_title(title, set(wb.sheetnames))
+    # copy_worksheetでは印刷範囲・タイトル・改ページが複製されない。
+    if base_ws.print_area:
+        ws.print_area = str(base_ws.print_area)
+    ws.print_title_rows = base_ws.print_title_rows
+    ws.print_title_cols = base_ws.print_title_cols
+    ws.row_breaks = copy(base_ws.row_breaks)
+    ws.col_breaks = copy(base_ws.col_breaks)
     return ws
 
 
@@ -69,7 +155,8 @@ def _clear_detail_rows(ws):
     for r in range(DETAIL_START_ROW, DETAIL_END_ROW + 1):
         for c in range(1, ws.max_column + 1):
             cell = ws.cell(r, c)
-            cell.value = None
+            if not isinstance(cell, MergedCell):
+                cell.value = None
 
 
 def _format_delivery_date(value: str) -> str:
@@ -96,28 +183,45 @@ def _write_delivery_date(ws, delivery_value: str, is_tokuyou: bool):
     ws[cell] = f"{formatted}納品分"
 
 
-def _format_qty_with_unit(qty, unit) -> str:
-    if qty is None:
-        return ""
+def _decimal_quantity(qty) -> Decimal:
+    """数量を十進数にし、floatの末尾に現れた微小な計算誤差だけを除く。
 
+    固定小数桁への丸めは行わない。floatに限り、4 ULP以内で有効桁が
+    6桁以上短くなる場合だけ短い表現を採用する。通常の小数や末尾まで
+    有効な精密値、Decimal・文字列で渡された数量はそのまま保持する。
+    """
     try:
-        q = float(qty)
-    except Exception:
+        value = Decimal(str(qty))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal(0)
+    if not value.is_finite():
+        return Decimal(0)
+
+    if isinstance(qty, float) and value:
+        digits = len(value.as_tuple().digits)
+        # Excelへの保存・再読込時の十進変換によるずれも含めた微小な範囲。
+        tolerance = Decimal.from_float(math.ulp(qty)) * 4
+        for precision in range(1, digits - 5):
+            candidate = Decimal(format(qty, f".{precision}g"))
+            if abs(candidate - value) <= tolerance:
+                return candidate
+    return value
+
+
+def _format_qty_with_unit(qty, unit) -> str:
+    q = _decimal_quantity(qty)
+    if not q:
         return ""
-
-    if q == 0:
-        return ""
-
-    if q.is_integer():
-        q_str = str(int(q))
-    else:
-        q_str = str(q)
-
+    q_str = format(q, "f")
+    if "." in q_str:
+        q_str = q_str.rstrip("0").rstrip(".")
     unit_str = "" if unit is None else str(unit).strip()
     return f"{q_str}{unit_str}"
 
 
 def _write_row_tokuyou(ws, row_no: int, use_date: str, food_name: str, qty_res, qty_staff, unit):
+    qty_res = _decimal_quantity(qty_res)
+    qty_staff = _decimal_quantity(qty_staff)
     ws.cell(row_no, 1).value = use_date
     ws.cell(row_no, 2).value = food_name
     ws.cell(row_no, 4).value = qty_res if qty_res != 0 else None
@@ -258,7 +362,7 @@ def generate_hokubu_order_workbook(
         df[col] = pd.to_numeric(
             df[col],
             errors="coerce"
-        ).fillna(0)
+        ).fillna(0).map(_decimal_quantity)
 
     # ------------------------------------------------------------
     # 数量0の行を除外
@@ -349,6 +453,7 @@ def generate_hokubu_order_workbook(
     page_no = 0
     row_in_page = 0
     ws = None
+    output_sheets = []
 
     # ------------------------------------------------------------
     # 発注書作成
@@ -402,6 +507,7 @@ def generate_hokubu_order_workbook(
                 base_ws,
                 title
             )
+            output_sheets.append(ws)
 
             _clear_detail_rows(
                 ws
@@ -430,12 +536,8 @@ def generate_hokubu_order_workbook(
                 row_no=target_row,
                 use_date=use_date,
                 food_name=food_name,
-                qty_res=float(
-                    rec[tok_res] or 0
-                ),
-                qty_staff=float(
-                    rec[tok_staff] or 0
-                ),
+                qty_res=rec[tok_res],
+                qty_staff=rec[tok_staff],
                 unit=unit,
             )
 
@@ -449,13 +551,17 @@ def generate_hokubu_order_workbook(
                 row_no=target_row,
                 use_date=use_date,
                 food_name=food_name,
-                qty_res=float(
-                    rec[yuhouse_res] or 0
-                ),
+                qty_res=rec[yuhouse_res],
                 unit=unit,
             )
 
         row_in_page += 1
+
+    # ------------------------------------------------------------
+    # 作成済みの各シートに共通のフォント設定を適用
+    # ------------------------------------------------------------
+    for output_ws in output_sheets:
+        _standardize_order_fonts(output_ws, is_tokuyou=is_tokuyou)
 
     # ------------------------------------------------------------
     # 元テンプレートシート削除
@@ -480,6 +586,9 @@ def generate_hokubu_order_workbook(
     wb.save(
         out_path
     )
+    wb.close()
+    if wb.vba_archive is not None:
+        wb.vba_archive.close()
 
     return out_path
 
@@ -508,3 +617,4 @@ def generate_hokubu_order_forms_both_facilities(
         out_path=yuhouse_path,
     )
     return p1, p2
+
