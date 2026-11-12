@@ -1863,6 +1863,274 @@ def build_menu_check_workbook(reds, excluded, items_count, days, master_stats):
     return buffer.getvalue()
 
 
+# ============================================================
+# ⑥ 仕入れカード作成 ロジック
+# 検収簿_加工済 → 仕入先×使用日×食品名×単位で集計し、
+# A4横・1ページ4枚（2列×2段）のカードExcelを作る。
+# 余白は上下左右とも0.5cmで対称、印刷可能領域（28.7×20.0cm）を
+# 2列×2段に完全分割するので、4等分に切ると4枚とも同寸になる。
+# ============================================================
+CARD_REQUIRED_COLS = ["使用日", "仕入先", "食品名", "単位",
+                      "特養入所者", "特養職員", "ユーハウス"]
+
+
+def _card_clean_text(value):
+    """前後の空白・タブ・改行（全角スペース含む）を取り除く"""
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    text = str(value)
+    return re.sub(r"^[\s　]+|[\s　]+$", "", text)
+
+
+def _card_date_text(value):
+    """使用日を表示用文字列にする（日付型なら m/d、それ以外は文字列そのまま）"""
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return f"{value.month}/{value.day}"
+    return _card_clean_text(value)
+
+
+def _card_load_df(source):
+    df = pd.read_excel(source, sheet_name=0)
+    df.columns = [_card_clean_text(c) for c in df.columns]
+    return df
+
+
+def list_card_dates(source):
+    """検収簿_加工済に含まれる使用日を、出現順に返す"""
+    df = _card_load_df(source)
+    if "使用日" not in df.columns:
+        return []
+    dates = []
+    for v in df["使用日"]:
+        t = _card_date_text(v)
+        if t and t not in dates:
+            dates.append(t)
+    return dates
+
+
+def aggregate_card_rows(source, date_filter=None):
+    """検収簿_加工済 → カード用に集計する。
+
+    戻り値: (cards, stats)
+      cards: [{"仕入先","使用日","食品名","数量","単位"}, ...]
+             並びは 仕入先（出現順）→ 使用日（出現順）→ 品目（出現順）
+      stats: 件数などの集計情報
+    """
+    df = _card_load_df(source)
+    missing = [c for c in CARD_REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "検収簿_加工済に必要な列が見つかりません: " + "、".join(missing)
+        )
+
+    has_total = "総合計" in df.columns
+    stats = {
+        "total_rows": int(len(df)),
+        "skipped_blank_name": 0,
+        "skipped_zero_qty": 0,
+        "skipped_date": 0,
+        "total_mismatch_rows": 0,
+    }
+
+    vendor_order = {}
+    date_order = {}
+    cards_map = {}
+    card_first_idx = {}
+
+    for idx, row in df.iterrows():
+        food = _card_clean_text(row["食品名"])
+        if not food:
+            stats["skipped_blank_name"] += 1
+            continue
+        date_text = _card_date_text(row["使用日"])
+        if date_filter is not None and date_text not in date_filter:
+            stats["skipped_date"] += 1
+            continue
+
+        def _num(col):
+            v = pd.to_numeric(pd.Series([row[col]]), errors="coerce").iloc[0]
+            return 0.0 if pd.isna(v) else float(v)
+
+        qty = _num("特養入所者") + _num("特養職員") + _num("ユーハウス")
+        if has_total:
+            total = _num("総合計")
+            if abs(qty - total) > 0.001:
+                stats["total_mismatch_rows"] += 1
+        if qty == 0:
+            stats["skipped_zero_qty"] += 1
+            continue
+
+        vendor = _card_clean_text(row["仕入先"])
+        unit = _card_clean_text(row["単位"])
+        if vendor not in vendor_order:
+            vendor_order[vendor] = len(vendor_order)
+        dkey = (vendor, date_text)
+        if dkey not in date_order:
+            date_order[dkey] = len(date_order)
+        key = (vendor, date_text, food, unit)
+        if key not in cards_map:
+            cards_map[key] = {
+                "仕入先": vendor,
+                "使用日": date_text,
+                "食品名": food,
+                "数量": 0.0,
+                "単位": unit,
+            }
+            card_first_idx[key] = idx
+        cards_map[key]["数量"] += qty
+
+    def _sort_key(item):
+        key, _card = item
+        vendor, date_text, _food, _unit = key
+        return (
+            vendor_order[vendor],
+            date_order[(vendor, date_text)],
+            card_first_idx[key],
+        )
+
+    cards = []
+    for _key, card in sorted(cards_map.items(), key=_sort_key):
+        q = card["数量"]
+        card["数量"] = int(q) if float(q).is_integer() else round(q, 3)
+        cards.append(card)
+
+    stats["card_count"] = len(cards)
+    stats["vendor_count"] = len(vendor_order)
+    return cards, stats
+
+
+# ---------------- レイアウト定数（cm / pt） ----------------
+_CARD_COL_CM = [4.28, 4.28, 3.05, 2.44]   # カード内4列（合計14.05cm）
+_CARD_SPACER_CM = 0.60
+_CARD_ROW_HEIGHTS_PT = [40, 6, 128, 8, 36, 8, 8, 8, 8]  # 9行 + 残り1行で 10.0cm
+_CARD_HEIGHT_PT = 10.0 / 2.54 * 72        # 283.4646pt
+_PAGE_ROWS = 20                            # 2段 × 10行
+
+
+def _cm_to_col_width(cm):
+    """cm → Excel列幅単位（標準フォント Calibri 11 前提）"""
+    px = cm / 2.54 * 96
+    return round((px - 5) / 7, 2)
+
+
+def _card_food_font_size(food):
+    L = len(food)
+    if L >= 16:
+        return 18
+    if L >= 12:
+        return 23
+    return 30
+
+
+def _draw_one_card(ws, top_row, left_col, card, thick):
+    """1枚のカードを描く（枠は10行×4列の外周のみ太線）"""
+    for r in range(top_row, top_row + 10):
+        for c in range(left_col, left_col + 4):
+            cell = ws.cell(row=r, column=c)
+            cell.border = Border(
+                left=thick if c == left_col else None,
+                right=thick if c == left_col + 3 else None,
+                top=thick if r == top_row else None,
+                bottom=thick if r == top_row + 9 else None,
+            )
+
+    # 左上：仕入先
+    cell = ws.cell(row=top_row, column=left_col)
+    cell.value = card["仕入先"]
+    cell.font = Font(name="Meiryo UI", size=10)
+    cell.alignment = Alignment(horizontal="left", vertical="top")
+
+    # 右上：使用日
+    cell = ws.cell(row=top_row, column=left_col + 3)
+    cell.value = card["使用日"]
+    cell.font = Font(name="Meiryo UI", size=18, bold=True)
+    cell.alignment = Alignment(horizontal="right", vertical="top")
+
+    # 食品名（4列結合）
+    ws.merge_cells(
+        start_row=top_row + 2, start_column=left_col,
+        end_row=top_row + 2, end_column=left_col + 3,
+    )
+    cell = ws.cell(row=top_row + 2, column=left_col)
+    cell.value = card["食品名"]
+    cell.font = Font(
+        name="Meiryo UI", size=_card_food_font_size(card["食品名"]), bold=True
+    )
+    cell.alignment = Alignment(
+        horizontal="left", vertical="center", wrap_text=True
+    )
+
+    # 数量
+    cell = ws.cell(row=top_row + 4, column=left_col + 2)
+    cell.value = card["数量"]
+    cell.font = Font(name="Meiryo UI", size=25, bold=True)
+    cell.alignment = Alignment(horizontal="right", vertical="center")
+
+    # 単位
+    cell = ws.cell(row=top_row + 4, column=left_col + 3)
+    cell.value = card["単位"]
+    cell.font = Font(name="Meiryo UI", size=18, bold=True)
+    cell.alignment = Alignment(horizontal="left", vertical="center")
+
+
+def build_cards_workbook(cards):
+    """カード一覧 → 仕入れカードExcel（bytes）"""
+    from openpyxl.worksheet.pagebreak import Break
+    from openpyxl.worksheet.properties import PageSetupProperties
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "仕入れカード"
+
+    # 列幅（A4横の印刷可能幅 28.7cm に一致させる）
+    widths_cm = _CARD_COL_CM + [_CARD_SPACER_CM] + _CARD_COL_CM
+    for i, cm in enumerate(widths_cm, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = _cm_to_col_width(cm)
+
+    pages = (len(cards) + 3) // 4
+    total_rows = pages * _PAGE_ROWS
+
+    # 行高（1ページ合計 = 20.0cm になるよう設定）
+    heights = _CARD_ROW_HEIGHTS_PT + [
+        round(_CARD_HEIGHT_PT - sum(_CARD_ROW_HEIGHTS_PT), 2)
+    ]
+    page_heights = heights + heights  # 上段カード10行＋下段カード10行
+    for page in range(pages):
+        for j, h in enumerate(page_heights):
+            ws.row_dimensions[page * _PAGE_ROWS + j + 1].height = h
+
+    thick = Side(style="medium")
+    for idx, card in enumerate(cards):
+        page_no = idx // 4
+        pos = idx % 4
+        top_row = page_no * _PAGE_ROWS + (11 if pos >= 2 else 1)
+        left_col = 6 if pos % 2 == 1 else 1
+        _draw_one_card(ws, top_row, left_col, card, thick)
+
+    # 改ページ（1ページ＝20行ごと）
+    for p in range(1, pages):
+        ws.row_breaks.append(Break(id=p * _PAGE_ROWS))
+
+    # 印刷設定：A4横、余白は上下左右とも0.5cmで対称、横は1ページ幅に合わせる
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    margin_in = 0.5 / 2.54
+    ws.page_margins = PageMargins(
+        left=margin_in, right=margin_in, top=margin_in, bottom=margin_in,
+        header=0, footer=0,
+    )
+    ws.print_area = f"A1:I{total_rows}"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
 # ------------------------------------------------------------
 # ------------------------------------------------------------
 # 🖥️ UI構築
@@ -1902,6 +2170,7 @@ with st.sidebar:
             "③ 注文書作成",
             "④ 丸八発注書作成",
             "⑤ 北部市場発注書作成",
+            "⑥ 仕入れカード作成",
         ],
         key="main_page_selector",
         label_visibility="collapsed",
@@ -2499,5 +2768,120 @@ elif page == "⑤ 北部市場発注書作成":
                 file_name=st.session_state["hokubu_yuhouse_fname"],
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 key="download_hokubu_yuhouse",
+                use_container_width=True,
+            )
+
+# ============================================================
+# ⑥ 仕入れカード作成
+# ============================================================
+elif page == "⑥ 仕入れカード作成":
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🎴 ⑥ 仕入れカードを作成</div>'
+        '<div class="main-feature-sub">'
+        '検収簿_加工済から、仕入先ごとの仕入れカード（A4横・1ページ4枚）を作成します。<br>'
+        'カードの数量は、特養入所者＋特養職員＋ユーハウスの合計です。'
+        '</div>'
+        '<div class="main-note-green">'
+        '🌿 カードは4枚とも同じ大きさになるよう寸法を統一しています。'
+        '印刷した紙を半分・半分に切ると、4枚とも約14.9cm × 10.5cm になります。'
+        '</div>'
+        '</div>',
+    )
+
+    st.html(
+        '<div class="mini-card">'
+        '<div class="mini-card-title">📄 検収簿_加工済</div>'
+        '<div class="mini-card-sub">「① 検収簿整形」で作成したファイルを使用してください</div>'
+        '</div>',
+    )
+    card_kenshu = st.file_uploader(
+        "検収簿_加工済（xlsx）",
+        type=["xlsx"],
+        key="card_kenshu",
+    )
+
+    card_dates_selected = None
+    if card_kenshu is not None:
+        try:
+            all_dates = list_card_dates(card_kenshu)
+        except Exception:
+            all_dates = []
+        if all_dates:
+            card_dates_selected = st.multiselect(
+                "カードを作る使用日（未選択なら全日）",
+                all_dates,
+                default=all_dates,
+                key="card_dates",
+            )
+
+    btn_card = st.button(
+        "🎴 仕入れカードを作成する",
+        key="btn_card",
+        use_container_width=True,
+    )
+
+    if btn_card:
+        if not card_kenshu:
+            st.warning("⚠ 検収簿_加工済 を選択してください。")
+        else:
+            try:
+                with st.spinner("仕入れカードを作成しています…"):
+                    date_filter = (
+                        set(card_dates_selected)
+                        if card_dates_selected
+                        else None
+                    )
+                    cards, card_stats = aggregate_card_rows(
+                        card_kenshu, date_filter=date_filter
+                    )
+                    if not cards:
+                        st.session_state.pop("card_data", None)
+                        st.warning(
+                            "⚠ カードになる品目がありませんでした"
+                            "（数量0の品目はカードにしません）。"
+                        )
+                    else:
+                        st.session_state["card_data"] = build_cards_workbook(cards)
+                        st.session_state["card_fname"] = "仕入れカード.xlsx"
+                        st.session_state["card_stats"] = card_stats
+                        st.session_state["card_preview"] = cards[:100]
+                        st.success(
+                            f"🌸 仕入れカードを作成しました！"
+                            f"（{card_stats['card_count']}枚 / "
+                            f"{(card_stats['card_count'] + 3) // 4}ページ、"
+                            f"仕入先 {card_stats['vendor_count']}社）"
+                        )
+                        if card_stats["skipped_zero_qty"]:
+                            st.info(
+                                f"数量0のためカードにしなかった品目: "
+                                f"{card_stats['skipped_zero_qty']}件"
+                            )
+                        if card_stats["total_mismatch_rows"]:
+                            st.warning(
+                                f"「総合計」と3施設の合計が合わない行: "
+                                f"{card_stats['total_mismatch_rows']}件"
+                                "（カードの数量は3施設の合計で計算しています）"
+                            )
+            except Exception as e:
+                st.session_state.pop("card_data", None)
+                st.error("仕入れカードの作成中にエラーが発生しました。")
+                st.exception(e)
+
+    if "card_data" in st.session_state:
+        st.markdown("### 📥 作成済みファイル")
+        st.download_button(
+            label="📥 仕入れカードをダウンロード",
+            data=st.session_state["card_data"],
+            file_name=st.session_state.get("card_fname", "仕入れカード.xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_card",
+            use_container_width=True,
+        )
+        if st.session_state.get("card_preview"):
+            st.markdown("### 🎴 カード内容（先頭100件まで）")
+            st.dataframe(
+                pd.DataFrame(st.session_state["card_preview"]),
                 use_container_width=True,
             )
