@@ -278,11 +278,16 @@ class PreservationTests(unittest.TestCase):
     def test_original_functions_screens_and_supplier_arguments_unchanged(self):
         baseline = APP_PATH.parent / "backups/app3_features_20261112/app3_before.py"
         if not baseline.exists():
+            baseline = APP_PATH.parent / "app3_before.py"
+        if not baseline.exists():
             self.skipTest("修正前バックアップがないため比較を省略")
         old, new = [ast.parse(p.read_text(encoding="utf-8")) for p in (baseline, APP_PATH)]
         old_functions = {n.name: n for n in old.body if isinstance(n, ast.FunctionDef) and n.lineno < 1597}
         new_functions = {n.name: n for n in new.body if isinstance(n, ast.FunctionDef)}
         for name, node in old_functions.items():
+            # ③の書式・改ページは仕様変更。画面と他機能は引き続き比較する。
+            if name in {"apply_order_style", "create_order_workbook"}:
+                continue
             self.assertEqual(ast.dump(node), ast.dump(new_functions[name]), name)
         def screens(tree):
             return {n.test.comparators[0].value: n for n in ast.walk(tree)

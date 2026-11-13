@@ -12,6 +12,8 @@ import streamlit as st
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.worksheet.page import PageMargins
+from openpyxl.worksheet.pagebreak import Break
+from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.utils import get_column_letter
 # 補助機能は、ファイル不足や内部エラーでアプリ全体が停止しないよう安全に読み込む
 MARUHACHI_IMPORT_ERROR = None
@@ -991,7 +993,147 @@ def create_vendor_journal_workbook(uploaded_file):
 # ------------------------------------------------------------
 # 注文書 書式設定（いわと／ユーハウス共通）
 # ------------------------------------------------------------
-def apply_order_style(ws, is_tokuyou=False):
+ORDER_HEADER_ROW = 5
+ORDER_LAYOUT_STAGES = ((18, 30), (17, 30), (16, 30), (16, 28))
+
+
+def _order_column_widths(is_tokuyou):
+    widths = {col: 15.18 for col in "ABCDEFGHIJKLM"}
+    widths["B"] = 60.09
+    widths.update({col: 7.73 for col in "DEFGH"})
+    if is_tokuyou:
+        widths.update({col: 7 for col in "ILM"})
+    return widths
+
+
+def _order_page_capacity(font_size, row_height):
+    """A4横・横1ページで、両施設に安全に入る本文行数（空白行も含む）。"""
+    # 列幅を概算ポイントに換算。横幅に合わせた印刷倍率を考慮する。
+    printable_width = 297 / 25.4 * 72 - 0.4 * 72
+    scales = []
+    for is_tokuyou in (True, False):
+        width = sum((int(value * 7 + 5) * 0.75)
+                    for value in _order_column_widths(is_tokuyou).values())
+        scales.append(min(1, printable_width / width))
+    scale = max(scales)
+    # 余白のほかにプリンタ差異用18ptを確保し、上部5行は各ページで反復。
+    height = (210 / 25.4 * 72 - 0.4 * 72 - 18) / scale
+    body_height = height - ORDER_HEADER_ROW * 30
+    # 文字サイズだけでは行高は減らない。通常は2行、17ptでは1行の
+    # ゆとりを残し、16ptで初めて安全な印刷可能高さまで使う。
+    reserve = (font_size - 16) * 30
+    return max(1, int((body_height - reserve) // row_height))
+
+
+def _plan_order_pages(supplier_rows):
+    """数量を除外する前のデータから、特養・ユーハウス共通の区切りを決める。"""
+    zero = pd.Series(0, index=supplier_rows.index)
+    quantities = {
+        col: pd.to_numeric(supplier_rows[col], errors="coerce").fillna(0)
+        if col in supplier_rows.columns else zero
+        for col in ("特養入所者", "特養職員", "ユーハウス")
+    }
+    masks = ((quantities["特養入所者"] != 0) | (quantities["特養職員"] != 0),
+             quantities["ユーハウス"] != 0)
+    counts = {}
+    for day in supplier_rows["使用日"].drop_duplicates():
+        on_day = supplier_rows["使用日"] == day
+        pair = tuple(int((on_day & mask).sum()) for mask in masks)
+        if any(pair):
+            counts[day] = pair
+    days = list(counts)
+
+    def fits(group):
+        # 注文のない日も日付用の1行を残し、両施設のページをそろえる。
+        # 改ページをまたぐ日付境界の空白は、前ページの末尾に確保する。
+        trailing = group[-1] != days[-1]
+        rows = max(sum(max(1, counts[day][facility]) for day in group)
+                   for facility in (0, 1)) + len(group) - 1 + int(trailing)
+        for font_size, row_height in ORDER_LAYOUT_STAGES:
+            if rows <= _order_page_capacity(font_size, row_height):
+                return {"days": [(day, 0, max(counts[day])) for day in group],
+                        "font_size": font_size, "row_height": row_height,
+                        "trailing_blank": trailing}
+        return None
+
+    if not days:
+        return []
+    all_days = fits(days)
+    if all_days:
+        return [all_days]
+
+    pages = []
+    index = 0
+    while index < len(days):
+        remaining = len(days) - index
+        sizes = (3, 2, 1) if remaining == 3 else (2, 1)
+        for size in sizes:
+            if size > remaining:
+                continue
+            page = fits(days[index:index + size])
+            if page:
+                pages.append(page)
+                index += size
+                break
+        else:
+            # 1日だけでも上限を超える場合は、その日の商品を分割。
+            # 行オフセットも共有し、少ない側には日付のみの行を残す。
+            day = days[index]
+            trailing = day != days[-1]
+            capacity = _order_page_capacity(16, 28)
+            start = 0
+            while start < max(counts[day]):
+                stop = min(start + capacity, max(counts[day]))
+                if trailing and stop == max(counts[day]) and stop - start == capacity:
+                    stop -= 1
+                last_blank = trailing and stop == max(counts[day])
+                rows = stop - start + int(last_blank)
+                font_size, row_height = next(
+                    stage for stage in ORDER_LAYOUT_STAGES
+                    if rows <= _order_page_capacity(*stage)
+                )
+                pages.append({"days": [(day, start, stop)],
+                              "font_size": font_size, "row_height": row_height,
+                              "trailing_blank": last_blank})
+                start = stop
+            index += 1
+    return pages
+
+
+def _write_order_pages(ws, sub, pages):
+    """日付間の手書き用空白行と、共通の日付単位の手動改ページを作る。"""
+    columns = list(sub.columns)
+    for col, label in enumerate(columns, 1):
+        ws.cell(ORDER_HEADER_ROW, col, label)
+    row = ORDER_HEADER_ROW + 1
+    page_ranges = []
+    for page_index, page in enumerate(pages):
+        first_row = row
+        for day_index, (day, start, stop) in enumerate(page["days"]):
+            if day_index:
+                row += 1
+            items = sub.loc[sub["使用日"] == day].iloc[start:stop]
+            if items.empty:
+                ws.cell(row, 1, day)
+                row += 1
+            else:
+                for item_index, values in enumerate(items.itertuples(index=False, name=None)):
+                    for col, value in enumerate(values, 1):
+                        if col == 1:
+                            value = day if item_index == 0 else ""
+                        ws.cell(row, col, None if pd.isna(value) else value)
+                    row += 1
+        if page["trailing_blank"]:
+            row += 1
+        # 空白行も書式・印刷範囲に含める。
+        ws.cell(row - 1, 13)
+        page_ranges.append((first_row, row - 1, page["font_size"], page["row_height"]))
+        if page_index < len(pages) - 1:
+            ws.row_breaks.append(Break(id=row - 1))
+    return page_ranges
+
+
+def apply_order_style(ws, is_tokuyou=False, page_ranges=None):
     font_body = Font(name="ＭＳ ゴシック", size=18)
     border = Border(
         left=Side("thin"),
@@ -1000,15 +1142,15 @@ def apply_order_style(ws, is_tokuyou=False):
         bottom=Side("thin")
     )
 
-    header_row = 6
+    header_row = ORDER_HEADER_ROW
 
-    # --- 6行目：ヘッダー行 ---
+    # --- 5行目：ヘッダー行 ---
     for cell in ws[header_row]:
         cell.font = Font(name="ＭＳ ゴシック", size=12, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = border
 
-    # --- 7行目以降：データ行 ---
+    # --- 6行目以降：データ行 ---
     for row in ws.iter_rows(min_row=header_row + 1):
         for c in row:
             c.font = font_body
@@ -1022,32 +1164,24 @@ def apply_order_style(ws, is_tokuyou=False):
     for i in range(1, ws.max_row + 1):
         ws.row_dimensions[i].height = 30
 
+    for first, last, font_size, row_height in page_ranges or []:
+        for row in ws.iter_rows(min_row=first, max_row=last):
+            ws.row_dimensions[row[0].row].height = row_height
+            for cell in row:
+                cell.font = Font(name="ＭＳ ゴシック", size=font_size)
+
     # ------------------------------------------------------------
     # 列幅設定（注文書仕様）
     # ------------------------------------------------------------
 
-    # A列：使用日
-    ws.column_dimensions["A"].width = 15.18
-
-    # B列：食品名（広く）
-    ws.column_dimensions["B"].width = 60.09
-
-    # D〜H列：7.73 に変更（数量・単位・確認欄）
-    for col in ["D", "E", "F", "G", "H"]:
-        ws.column_dimensions[col].width = 7.73
-
-    # C・I・J・K・L・M は 15.18
-    for col in ["C", "I", "J", "K", "L", "M"]:
-        ws.column_dimensions[col].width = 15.18
+    for col, width in _order_column_widths(is_tokuyou).items():
+        ws.column_dimensions[col].width = width
 
     # 特養用マクロの指定
     if is_tokuyou:
-        for col in ["I", "L", "M"]:
-            ws.column_dimensions[col].width = 7
-
         # C～E列の外枠を太線にする（内側の罫線は維持）
         thick = Side(style="thick")
-        start_row = 6
+        start_row = header_row
         end_row = ws.max_row
         if end_row >= start_row:
             for row in range(start_row, end_row + 1):
@@ -1080,7 +1214,7 @@ def apply_order_style(ws, is_tokuyou=False):
     # ------------------------------------------------------------
     # B列（食品名）を縮小して全体表示
     # ------------------------------------------------------------
-    for row in ws.iter_rows(min_row=7, max_row=ws.max_row, min_col=2, max_col=2):
+    for row in ws.iter_rows(min_row=header_row + 1, max_row=ws.max_row, min_col=2, max_col=2):
         for cell in row:
             cell.alignment = Alignment(
                 horizontal="left",
@@ -1094,7 +1228,20 @@ def apply_order_style(ws, is_tokuyou=False):
     # ------------------------------------------------------------
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.5, bottom=0.5)
+    ws.page_margins = PageMargins(left=0.2, right=0.2, top=0.2, bottom=0.2,
+                                  header=0.08, footer=0.08)
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True, autoPageBreaks=False)
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_view.showGridLines = False
+    ws.print_options.gridLines = False
+    ws.print_title_rows = f"1:{header_row}"
+    # &Nはブック全体の印刷では全仕入先の合計になるため、
+    # 総ページ数は仕入先ごとの計画値を使用する。
+    ws.oddFooter.center.text = f"&P / {len(page_ranges) if page_ranges else 1}"
+    ws.oddFooter.center.size = 10
+    ws.page_setup.firstPageNumber = 1
+    ws.page_setup.useFirstPageNumber = True
 
     # 印刷範囲（A〜M列）
     ws.print_area = f"A1:M{ws.max_row}"
@@ -1290,6 +1437,14 @@ def create_order_workbook(uploaded_file, order_type):
     # ------------------------------------------------------------
     # Excel出力
     # ------------------------------------------------------------
+    # ExcelWriterにシートが1枚もない状態で例外を出すと、保存時の
+    # IndexErrorに置き換わるため、数量なしはWriterを開く前に判定する。
+    has_quantity = df[raw_qty] != 0
+    if raw_staff:
+        has_quantity = has_quantity | (df[raw_staff] != 0)
+    if not has_quantity.any():
+        raise ValueError("注文数量が入力されているデータが見つかりませんでした。")
+
     buffer = io.BytesIO()
 
     used_sheet_names = set()
@@ -1321,6 +1476,8 @@ def create_order_workbook(uploaded_file, order_type):
                 ],
                 na_position="last",
             )
+
+            pages = _plan_order_pages(sub)
 
             # ----------------------------------------------------
             # 特養
@@ -1462,17 +1619,6 @@ def create_order_workbook(uploaded_file, order_type):
             ].copy()
 
             # ----------------------------------------------------
-            # 同じ使用日は最初だけ表示
-            # ----------------------------------------------------
-            sub["使用日"] = (
-                sub["使用日"].mask(
-                    sub["使用日"]
-                    .duplicated(),
-                    ""
-                )
-            )
-
-            # ----------------------------------------------------
             # Excelシート名
             # ----------------------------------------------------
             sheet_name = re.sub(
@@ -1514,12 +1660,8 @@ def create_order_workbook(uploaded_file, order_type):
             # ----------------------------------------------------
             # Excelへ書き込み
             # ----------------------------------------------------
-            sub.to_excel(
-                writer,
-                sheet_name=sheet_name,
-                index=False,
-                startrow=5,
-            )
+            ws = writer.book.create_sheet(sheet_name)
+            page_ranges = _write_order_pages(ws, sub, pages)
 
             created_sheet_count += 1
 
@@ -1533,6 +1675,7 @@ def create_order_workbook(uploaded_file, order_type):
                     "特養"
                     in order_type
                 ),
+                page_ranges=page_ranges,
             )
 
             # ----------------------------------------------------
@@ -1552,7 +1695,7 @@ def create_order_workbook(uploaded_file, order_type):
                     supplier
                 )
 
-                ws["C6"] = (
+                ws["C5"] = (
                     "ユーハウス入居者"
                 )
 
