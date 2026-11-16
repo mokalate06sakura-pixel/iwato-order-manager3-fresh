@@ -60,6 +60,24 @@ with patch("streamlit.file_uploader", side_effect=uploader):
 
 
 class AppScreensTests(unittest.TestCase):
+    def test_stale_hokubu_module_is_reloaded_only_once(self):
+        import importlib
+        from unittest.mock import patch
+        import create_order_form_hokubu as orders
+        revision = orders.OUTPUT_LAYOUT_REVISION
+        try:
+            orders.OUTPUT_LAYOUT_REVISION = None
+            with tempfile.TemporaryDirectory() as directory:
+                with patch("importlib.reload", wraps=importlib.reload) as reload_module:
+                    app = injected_app(directory).run()
+                    self.assertEqual(list(app.exception), [])
+                    self.assertEqual(orders.OUTPUT_LAYOUT_REVISION, revision)
+                    app.run()
+                    self.assertEqual(list(app.exception), [])
+                    self.assertEqual(sum(call.args[0] is orders for call in reload_module.call_args_list), 1)
+        finally:
+            orders.OUTPUT_LAYOUT_REVISION = revision
+
     def test_all_eight_screens_and_missing_master_message(self):
         with tempfile.TemporaryDirectory() as directory:
             app = injected_app(directory).run()

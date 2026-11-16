@@ -14,6 +14,7 @@ ORDER_FONT_NAME = "游ゴシック"
 ORDER_BODY_FONT_SIZE = 11
 ORDER_TITLE_FONT_SIZE = 14
 ORDER_DATE_FONT_SIZE = 12
+OUTPUT_LAYOUT_REVISION = "delivery-grouping-20261116"
 
 
 def _standardize_order_fonts(ws, is_tokuyou: bool):

@@ -27,7 +27,11 @@ except Exception as exc:
 
 try:
     # 北部市場：納品日別・使用日の先頭表示（2026-11-16）
-    from create_order_form_hokubu import generate_hokubu_order_forms_both_facilities
+    import importlib
+    import create_order_form_hokubu as _hokubu_orders
+    if getattr(_hokubu_orders, "OUTPUT_LAYOUT_REVISION", None) != "delivery-grouping-20261116":
+        _hokubu_orders = importlib.reload(_hokubu_orders)
+    generate_hokubu_order_forms_both_facilities = _hokubu_orders.generate_hokubu_order_forms_both_facilities
 except Exception as exc:
     generate_hokubu_order_forms_both_facilities = None
     HOKUBU_IMPORT_ERROR = exc
@@ -2990,6 +2994,8 @@ elif page == "④ 丸八発注書作成":
 # ⑤ 北部市場発注書作成
 # ============================================================
 elif page == "⑤ 北部市場発注書作成":
+
+    st.caption("納品日ごとにまとめ、使用日は各日付の先頭行だけ表示します（1シート12明細）。")
 
     st.html(
         '<div class="main-feature-card">'
