@@ -26,6 +26,7 @@ except Exception as exc:
     MARUHACHI_IMPORT_ERROR = exc
 
 try:
+    # 北部市場：納品日別・使用日の先頭表示（2026-11-16）
     from create_order_form_hokubu import generate_hokubu_order_forms_both_facilities
 except Exception as exc:
     generate_hokubu_order_forms_both_facilities = None
