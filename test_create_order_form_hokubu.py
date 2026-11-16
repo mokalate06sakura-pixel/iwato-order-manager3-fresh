@@ -194,9 +194,9 @@ class WorkbookTest(unittest.TestCase):
                     untouched = hokubu.YUHOUSE_SHEET if is_tokuyou else hokubu.TOKUYOU_SHEET
                     base = reference[base_name]
                     generated = [ws for ws in wb if ws.title not in (untouched, "他業者テンプレート")]
-                    self.assertEqual(len(generated), 4)
+                    self.assertEqual(len(generated), 3)
                     self.assertNotIn(base_name, wb.sheetnames)
-                    self.assertEqual([sum(ws.cell(r, 2).value is not None for r in range(7, 19)) for ws in generated], [12, 1, 1, 1])
+                    self.assertEqual([sum(ws.cell(r, 2).value is not None for r in range(7, 19)) for ws in generated], [12, 2, 1])
                     for name in (untouched, "他業者テンプレート"):
                         for row in reference[name]:
                             for cell in row:
@@ -204,9 +204,10 @@ class WorkbookTest(unittest.TestCase):
                                 self.assertEqual(actual.value, cell.value)
                                 self.assertEqual(actual._style, cell._style)
                     records = {}
-                    dates = [("11/3火", "11月2日納品分"), ("11/3火", "11月2日納品分"),
-                             ("11/4水", "11月2日納品分"), ("11/4水", "11月3日納品分")]
-                    for ws, (use_date, delivery_date) in zip(generated, dates):
+                    dates = [("11月2日納品分", {7: "11/3火"}),
+                             ("11月2日納品分", {7: "11/3火", 8: "11/4水"}),
+                             ("11月3日納品分", {7: "11/4水"})]
+                    for ws, (delivery_date, date_labels) in zip(generated, dates):
                         self.assertEqual(ws.merged_cells, base.merged_cells)
                         self.assertEqual(ws.page_setup, base.page_setup)
                         self.assertEqual(ws.page_margins, base.page_margins)
@@ -246,7 +247,7 @@ class WorkbookTest(unittest.TestCase):
                             self.assertEqual(ws[address].alignment.horizontal, "center")
                         for r in range(7, 19):
                             if ws.cell(r, 2).value:
-                                self.assertEqual(ws.cell(r, 1).value, use_date)
+                                self.assertEqual(ws.cell(r, 1).value, date_labels.get(r))
                                 records[ws.cell(r, 2).value] = (ws, r)
                     qty_col = 6 if is_tokuyou else 4
                     for food, expected in {"誤差数量": "4.6kg", "同一食品集約": "0.6kg" if is_tokuyou else "0.3kg", "パック": "5パック", "本数": "50本", "精度保持": "0.00000123456789kg"}.items():
@@ -269,5 +270,75 @@ class WorkbookTest(unittest.TestCase):
             reference.vba_archive.close()
 
 
+class DeliveryGroupingTest(unittest.TestCase):
+    def generate(self, items):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        template = root / "template.xlsm"
+        make_template(template)
+        rows = []
+        for delivery, use, food, res, staff, yuhouse in items:
+            rows.append({"仕入先": hokubu.SUPPLIER_NAME, "納品日": delivery,
+                         "使用日": use, "食品名": food, "単位": "kg",
+                         "特養入所者": res, "特養職員": staff, "ユーハウス": yuhouse})
+        data = root / "input.xlsx"
+        pd.DataFrame(rows).to_excel(data, index=False)
+        paths = hokubu.generate_hokubu_order_forms_both_facilities(data, template, root)
+        pages = []
+        for path in paths:
+            wb = openpyxl.load_workbook(path, keep_vba=True)
+            self.addCleanup(wb.vba_archive.close)
+            self.addCleanup(wb.close)
+            pages.append([ws for ws in wb if ws.title not in (
+                hokubu.TOKUYOU_SHEET, hokubu.YUHOUSE_SHEET, "他業者テンプレート")])
+        return pages
+
+    def test_same_delivery_shares_sheet_and_different_use_dates_keep_separate_quantities(self):
+        items = [
+            ("11/3火", "11/4水", "別納品", 5, 1, 6),
+            ("11/2月", "11/4水", "きゅうり", 3, 0.5, 4),
+            ("11/2月", "11/3火", "にんじん", 2, 0, 3),
+            ("11/2月", "11/3火", "きゅうり", 1, 0.25, 2),
+            ("11/2月", "11/2月", "数量ゼロ", 0, 0, 0),
+        ]
+        for is_tokuyou, pages in zip((True, False), self.generate(items)):
+            with self.subTest(tokuyou=is_tokuyou):
+                self.assertEqual(len(pages), 2)
+                first, second = pages
+                self.assertEqual([first.cell(r, 1).value for r in range(7, 10)], ["11/3火", None, "11/4水"])
+                self.assertEqual([first.cell(r, 2).value for r in range(7, 10)], ["きゅうり", "にんじん", "きゅうり"])
+                qty_column = 6 if is_tokuyou else 4
+                self.assertEqual(first.cell(7, qty_column).value, "1.25kg" if is_tokuyou else "2kg")
+                self.assertEqual(first.cell(9, qty_column).value, "3.5kg" if is_tokuyou else "4kg")
+                self.assertEqual(second["A7"].value, "11/4水")
+                date_cell = "J4" if is_tokuyou else "I4"
+                self.assertEqual(first[date_cell].value, "11月2日納品分")
+                self.assertEqual(second[date_cell].value, "11月3日納品分")
+                self.assertEqual(len(first.title.split("_")), 3)
+
+    def test_twelve_row_limit_and_same_use_date_repeated_at_each_page_start(self):
+        for count, page_counts in ((12, [12]), (13, [12, 1]), (25, [12, 12, 1])):
+            items = [("11/2月", "11/3火", f"食品{i:03}", 1, 0, 1) for i in range(count)]
+            for pages in self.generate(items):
+                with self.subTest(count=count):
+                    self.assertEqual(len(pages), len(page_counts))
+                    self.assertEqual([sum(ws.cell(r, 2).value is not None for r in range(7, 19)) for ws in pages], page_counts)
+                    for ws in pages:
+                        self.assertEqual(ws["A7"].value, "11/3火")
+                        self.assertTrue(all(ws.cell(r, 1).value is None for r in range(8, 19)))
+
+    def test_use_date_changes_on_last_row_and_continues_on_next_sheet(self):
+        items = [("11/2月", "11/3火", f"食品{i:02}", 1, 0, 1) for i in range(11)]
+        items += [("11/2月", "11/4水", f"翌日食品{i}", 1, 0, 1) for i in range(2)]
+        for pages in self.generate(list(reversed(items))):
+            self.assertEqual(len(pages), 2)
+            self.assertEqual(pages[0]["A7"].value, "11/3火")
+            self.assertTrue(all(pages[0].cell(r, 1).value is None for r in range(8, 18)))
+            self.assertEqual(pages[0]["A18"].value, "11/4水")
+            self.assertEqual(pages[1]["A7"].value, "11/4水")
+
+
 if __name__ == "__main__":
     unittest.main()
+

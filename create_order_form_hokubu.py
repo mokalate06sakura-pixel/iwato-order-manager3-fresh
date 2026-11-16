@@ -219,7 +219,7 @@ def _format_qty_with_unit(qty, unit) -> str:
     return f"{q_str}{unit_str}"
 
 
-def _write_row_tokuyou(ws, row_no: int, use_date: str, food_name: str, qty_res, qty_staff, unit):
+def _write_row_tokuyou(ws, row_no: int, use_date: Optional[str], food_name: str, qty_res, qty_staff, unit):
     qty_res = _decimal_quantity(qty_res)
     qty_staff = _decimal_quantity(qty_staff)
     ws.cell(row_no, 1).value = use_date
@@ -231,7 +231,7 @@ def _write_row_tokuyou(ws, row_no: int, use_date: str, food_name: str, qty_res, 
     ws.cell(row_no, 6).value = _format_qty_with_unit(total, unit)
 
 
-def _write_row_yuhouse(ws, row_no: int, use_date: str, food_name: str, qty_res, unit):
+def _write_row_yuhouse(ws, row_no: int, use_date: Optional[str], food_name: str, qty_res, unit):
     ws.cell(row_no, 1).value = use_date
     ws.cell(row_no, 2).value = food_name
     ws.cell(row_no, 4).value = _format_qty_with_unit(qty_res, unit)
@@ -475,17 +475,17 @@ def generate_hokubu_order_workbook(
         unit = rec["単位"]
 
         # --------------------------------------------------------
-        # 納品日・使用日が変わったら新しいシート
+        # 納品日が変わったら新しいシート（使用日は同じシート内に並べる）
         # または12行を超えたら新しいページ
         # --------------------------------------------------------
         if (
             current_delivery != delivery
-            or current_use_date != use_date
             or row_in_page >= ROWS_PER_PAGE
         ):
 
             current_delivery = delivery
-            current_use_date = use_date
+            # 改ページ後の先頭では、同じ使用日が続いていても日付を表示する。
+            current_use_date = None
 
             page_no += 1
 
@@ -497,7 +497,6 @@ def generate_hokubu_order_workbook(
 
             title = (
                 f"{delivery}_"
-                f"{use_date}_"
                 f"{facility_text}_"
                 f"{page_no}"
             )
@@ -525,6 +524,7 @@ def generate_hokubu_order_workbook(
             DETAIL_START_ROW
             + row_in_page
         )
+        display_use_date = use_date if current_use_date != use_date else None
 
         # --------------------------------------------------------
         # 特養
@@ -534,7 +534,7 @@ def generate_hokubu_order_workbook(
             _write_row_tokuyou(
                 ws=ws,
                 row_no=target_row,
-                use_date=use_date,
+                use_date=display_use_date,
                 food_name=food_name,
                 qty_res=rec[tok_res],
                 qty_staff=rec[tok_staff],
@@ -549,12 +549,13 @@ def generate_hokubu_order_workbook(
             _write_row_yuhouse(
                 ws=ws,
                 row_no=target_row,
-                use_date=use_date,
+                use_date=display_use_date,
                 food_name=food_name,
                 qty_res=rec[yuhouse_res],
                 unit=unit,
             )
 
+        current_use_date = use_date
         row_in_page += 1
 
     # ------------------------------------------------------------
