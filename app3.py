@@ -3384,7 +3384,7 @@ elif page == "⑧ 献立編集":
         )
         st.caption("Excelで日別_シートを選び、印刷プレビューを確認してから印刷してください。")
 
-    with st.expander("日別シートの後片付け・元のVBAマクロ"):
+    with st.expander("日別シートの後片付け"):
         st.write("「日別_」で始まるシートだけを削除したファイルを作成します。元シートの内容・画像は変更しません。")
         if st.button("日別シートだけ削除したファイルを作成", key="daily_cleanup_run"):
             if daily_upload is None:
@@ -3404,10 +3404,3 @@ elif page == "⑧ 献立編集":
                 file_name=Path(daily_upload.name).stem + "_日別削除.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="daily_cleanup_download",
             )
-        macro_path = Path(__file__).resolve().parent / "macros/SplitMenuDaily_A3_v4.bas"
-        if macro_path.exists():
-            st.download_button("📥 元のVBAマクロ（Excel用）", data=macro_path.read_bytes(), file_name=macro_path.name, key="daily_macro_download")
-        macro_v6_path = Path(__file__).resolve().parent / "macros/SplitMenuDaily_A3_v6.bas"
-        if macro_v6_path.exists():
-            st.download_button("📥 V6のVBAマクロ（Excel用）", data=macro_v6_path.read_bytes(), file_name=macro_v6_path.name, key="daily_macro_v6_download")
-        st.caption("この画面ではExcelマクロの登録は不要です。VBA版を使う場合は、個人用マクロブックに取り込み、元の献立シートを選んで実行してください。")
