@@ -2503,6 +2503,7 @@ with st.sidebar:
             "⑤ 北部市場発注書作成",
             "⑥ 仕入れカード作成",
             "⑦ マスタ管理",
+            "⑧ 献立の日別印刷",
         ],
         key="main_page_selector",
         label_visibility="collapsed",
@@ -3287,3 +3288,100 @@ elif page == "⑦ マスタ管理":
                 mime="application/vnd.ms-excel.sheet.macroEnabled.12",
                 key=f"master_download_{master_id}",
             )
+
+
+# ============================================================
+# ⑧ 献立の日別印刷（SplitMenuDaily_A3_V4）
+# ============================================================
+elif page == "⑧ 献立の日別印刷":
+    from split_menu_daily import cleanup_daily_sheets, list_menu_sheets, split_menu_daily
+
+    st.html(
+        '<div class="main-feature-card">'
+        '<div class="main-feature-title">🗓️ ⑧ 献立の日別印刷</div>'
+        '<div class="main-feature-sub">1か月分の献立を日ごとに分け、1日＝A3縦・1ページに整えます。<br>'
+        'セレクト献立の&lt;B&gt;は、該当する日の直後の別シートに分けます。</div>'
+        '</div>'
+    )
+    st.info("元シートは残し、承認スタンプは下の設定で付ける／付けないを選べます。アップロードした元ファイルは書き換えません。")
+    st.caption("既存の「日別_」シートは作り直します。行数が多い日は、1ページに合わせるため印刷文字が小さくなります。")
+
+    def clear_daily_menu_result():
+        for key in ("daily_menu_data", "daily_menu_fname", "daily_menu_report", "daily_cleanup_data", "daily_cleanup_count"):
+            st.session_state.pop(key, None)
+
+    include_daily_stamps = st.checkbox(
+        "承認スタンプ画像を付ける", value=False, key="daily_menu_include_stamps",
+        on_change=clear_daily_menu_result,
+    )
+    st.caption("チェックあり：元の承認スタンプを日別・Bシートにも引き継ぎます。チェックなし：元シートからも承認スタンプを除去します。他の画像は元シートに残します。")
+
+    daily_upload = st.file_uploader(
+        "1か月分の献立表（xlsx）", type=["xlsx"], key="daily_menu_upload",
+        on_change=clear_daily_menu_result,
+    )
+    daily_sheet = None
+    if daily_upload is not None:
+        try:
+            daily_names, daily_default = list_menu_sheets(daily_upload.getvalue())
+            daily_sheet = st.selectbox(
+                "日別に分ける元シート", daily_names, index=daily_names.index(daily_default),
+                key="daily_menu_sheet", on_change=clear_daily_menu_result,
+            )
+        except Exception as exc:
+            clear_daily_menu_result()
+            st.error(str(exc))
+
+    if st.button("🗓️ 日別の献立表を作成", key="daily_menu_run", use_container_width=True):
+        clear_daily_menu_result()
+        if daily_upload is None:
+            st.warning("献立表（xlsx）を選択してください。")
+        elif daily_sheet is not None:
+            try:
+                with st.spinner("日別の献立表を作成しています…"):
+                    daily_data, daily_report = split_menu_daily(daily_upload.getvalue(), daily_sheet, include_stamps=include_daily_stamps)
+                st.session_state["daily_menu_data"] = daily_data
+                st.session_state["daily_menu_fname"] = Path(daily_upload.name).stem + "_日別_A3縦.xlsx"
+                st.session_state["daily_menu_report"] = daily_report
+            except Exception as exc:
+                st.error(f"日別の献立表を作成できませんでした：{exc}")
+
+    if "daily_menu_data" in st.session_state:
+        daily_report = st.session_state["daily_menu_report"]
+        st.success(f"日別の献立表を作成しました！（{daily_report['days']}日分／セレクト献立 {daily_report['select_days']}日）")
+        if daily_report["include_stamps"]:
+            st.caption(f"承認スタンプあり：元シートの{daily_report['stamps_kept']}個を保持し、日別・Bシートに計{daily_report['stamp_copies']}個を配置しました。")
+        else:
+            st.caption(f"承認スタンプなしで作成しました（元シートから{daily_report['stamps_removed']}個を除去）。")
+        st.download_button(
+            "📥 日別の献立表をダウンロード", data=st.session_state["daily_menu_data"],
+            file_name=st.session_state["daily_menu_fname"],
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="daily_menu_download", use_container_width=True,
+        )
+        st.caption("Excelで日別_シートを選び、印刷プレビューを確認してから印刷してください。")
+
+    with st.expander("日別シートの後片付け・元のVBAマクロ"):
+        st.write("「日別_」で始まるシートだけを削除したファイルを作成します。元シートの内容・画像は変更しません。")
+        if st.button("日別シートだけ削除したファイルを作成", key="daily_cleanup_run"):
+            if daily_upload is None:
+                st.warning("後片付けする献立表（xlsx）を選択してください。")
+            else:
+                try:
+                    cleanup_data, cleanup_count = cleanup_daily_sheets(daily_upload.getvalue())
+                    st.session_state["daily_cleanup_data"] = cleanup_data
+                    st.session_state["daily_cleanup_count"] = cleanup_count
+                except Exception as exc:
+                    st.session_state.pop("daily_cleanup_data", None)
+                    st.error(f"後片付けできませんでした：{exc}")
+        if "daily_cleanup_data" in st.session_state:
+            st.write(f"日別シート {st.session_state['daily_cleanup_count']}枚を削除しました。")
+            st.download_button(
+                "📥 日別シート削除後のファイル", data=st.session_state["daily_cleanup_data"],
+                file_name=Path(daily_upload.name).stem + "_日別削除.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="daily_cleanup_download",
+            )
+        macro_path = Path(__file__).resolve().parent / "macros/SplitMenuDaily_A3_v4.bas"
+        if macro_path.exists():
+            st.download_button("📥 元のVBAマクロ（Excel用）", data=macro_path.read_bytes(), file_name=macro_path.name, key="daily_macro_download")
+        st.caption("この画面ではExcelマクロの登録は不要です。VBA版を使う場合は、個人用マクロブックに取り込み、元の献立シートを選んで実行してください。")
