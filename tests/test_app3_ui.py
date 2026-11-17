@@ -93,7 +93,7 @@ class AppScreensTests(unittest.TestCase):
             app.button(key="btn_hokubu").click().run()
             self.assertTrue(any("検収簿" in item.value for item in app.warning))
 
-    def test_daily_menu_generation_cleanup_and_validation_ui(self):
+    def test_daily_menu_generation_and_validation_ui(self):
         from test_split_menu_daily import menu_fixture
         for valid in (False, True):
             with self.subTest(valid=valid), tempfile.TemporaryDirectory() as directory:
@@ -132,9 +132,8 @@ class AppScreensTests(unittest.TestCase):
                 app.session_state["daily_menu_equalize_widths"] = False
                 app.button(key="daily_menu_run").click().run()
                 self.assertTrue(app.session_state["daily_menu_report"]["equalize_widths"])
-                app.button(key="daily_cleanup_run").click().run()
-                self.assertEqual(list(app.exception), [])
-                self.assertEqual(app.session_state["daily_cleanup_count"], 1)
+                self.assertNotIn("daily_cleanup_run", [button.key for button in app.button])
+                self.assertNotIn("日別シートの後片付け", [expander.label for expander in app.expander])
                 app.selectbox(key="daily_menu_sheet").set_value("別シート").run()
                 self.assertNotIn("daily_menu_data", app.session_state)
                 app.button(key="daily_menu_run").click().run()
