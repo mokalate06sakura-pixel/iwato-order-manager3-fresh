@@ -81,17 +81,49 @@ class AppScreensTests(unittest.TestCase):
                 finally:
                     orders.OUTPUT_LAYOUT_REVISION = revision
 
-    def test_all_eight_screens_and_missing_master_message(self):
+    def test_all_nine_screens_and_missing_master_message(self):
         with tempfile.TemporaryDirectory() as directory:
             app = injected_app(directory).run()
             options = app.radio(key="main_page_selector").options
-            self.assertEqual([label[0] for label in options], list("⓪①②③④⑤⑥⑦"))
+            self.assertEqual([label[0] for label in options], list("⓪①②③④⑤⑥⑦⑧"))
             for page in options:
                 app.radio(key="main_page_selector").set_value(page).run()
                 self.assertEqual(list(app.exception), [], page)
             app.radio(key="main_page_selector").set_value("⑤ 北部市場発注書作成").run()
             app.button(key="btn_hokubu").click().run()
             self.assertTrue(any("検収簿" in item.value for item in app.warning))
+
+    def test_daily_menu_generation_cleanup_and_validation_ui(self):
+        from test_split_menu_daily import menu_fixture
+        for valid in (False, True):
+            with self.subTest(valid=valid), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = root / "monthly.xlsx"
+                path.write_bytes(menu_fixture() if valid else b"invalid workbook")
+                app = injected_app(root, {"daily_menu_upload": path}).run()
+                app.radio(key="main_page_selector").set_value("⑧ 献立の日別印刷").run()
+                self.assertEqual(list(app.exception), [])
+                if not valid:
+                    self.assertTrue(any("読み込めません" in item.value for item in app.error))
+                    continue
+                app.button(key="daily_menu_run").click().run()
+                self.assertEqual(list(app.exception), [])
+                self.assertEqual(app.session_state["daily_menu_report"]["days"], 2)
+                self.assertEqual(app.session_state["daily_menu_report"]["select_days"], 1)
+                app.run()
+                self.assertTrue(any("2日分" in item.value for item in app.success))
+                app.checkbox(key="daily_menu_include_stamps").check().run()
+                self.assertNotIn("daily_menu_data", app.session_state)
+                app.button(key="daily_menu_run").click().run()
+                self.assertTrue(app.session_state["daily_menu_report"]["include_stamps"])
+                self.assertEqual(app.session_state["daily_menu_report"]["stamp_copies"], 2)
+                app.button(key="daily_cleanup_run").click().run()
+                self.assertEqual(list(app.exception), [])
+                self.assertEqual(app.session_state["daily_cleanup_count"], 1)
+                app.selectbox(key="daily_menu_sheet").set_value("別シート").run()
+                self.assertNotIn("daily_menu_data", app.session_state)
+                app.button(key="daily_menu_run").click().run()
+                self.assertTrue(any("日付行" in item.value for item in app.error))
 
     def test_registered_master_and_override_are_copied_without_modification(self):
         for override in (False, True):
