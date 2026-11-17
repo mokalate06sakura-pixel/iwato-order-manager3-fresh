@@ -20,7 +20,11 @@ MARUHACHI_IMPORT_ERROR = None
 HOKUBU_IMPORT_ERROR = None
 
 try:
-    from create_order_form_maruhachi import generate_maruhachi_order_forms_both_facilities
+    import importlib
+    import create_order_form_maruhachi as _maruhachi_orders
+    if getattr(_maruhachi_orders, "OUTPUT_LAYOUT_REVISION", None) != "use-date-first-20261116":
+        _maruhachi_orders = importlib.reload(_maruhachi_orders)
+    generate_maruhachi_order_forms_both_facilities = _maruhachi_orders.generate_maruhachi_order_forms_both_facilities
 except Exception as exc:
     generate_maruhachi_order_forms_both_facilities = None
     MARUHACHI_IMPORT_ERROR = exc
@@ -2841,6 +2845,8 @@ elif page == "③ 注文書作成":
 # ④ 丸八発注書作成
 # ============================================================
 elif page == "④ 丸八発注書作成":
+
+    st.caption("使用日は、各シートで数量が入る最初の明細だけに表示します。")
 
     st.html(
         '<div class="main-feature-card">'

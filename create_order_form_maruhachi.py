@@ -40,6 +40,7 @@ TAG_SHEET_NAME = "タグ"
 FIXED_FIRST_ROW = 6
 APPEND_START_ROW = 22
 APPEND_MAX_ROWS = 7
+OUTPUT_LAYOUT_REVISION = "use-date-first-20261116"
 
 COL_OUT_USE_DATE = 1
 COL_OUT_CODE = 2
@@ -192,6 +193,20 @@ def _write_append_row(
     ws.cell(rr, COL_OUT_STAFF).value = qty_staff if qty_staff != 0 else None
 
 
+def _suppress_repeated_use_dates(ws: Worksheet) -> None:
+    """定番品・追加品を通して、使用日は最初の発注明細にだけ残す。"""
+    previous_date = None
+    for row in range(FIXED_FIRST_ROW, APPEND_START_ROW + APPEND_MAX_ROWS):
+        cell = ws.cell(row, COL_OUT_USE_DATE)
+        if cell.value is None or cell.value == "":
+            continue
+        use_date = cell.value
+        if use_date == previous_date:
+            cell.value = None
+        else:
+            previous_date = use_date
+
+
 def _copy_sheet_layout(base_ws, ws2) -> None:
     ws2.sheet_format = copy(base_ws.sheet_format)
     ws2.sheet_properties = copy(base_ws.sheet_properties)
@@ -304,6 +319,7 @@ def generate_maruhachi_order_workbook(
     _clear_sheet_quantities(base_ws)
 
     use_dates = sorted(df[COL_USE_DATE].dropna().astype(str).unique().tolist())
+    output_sheets = []
 
     for use_date in use_dates:
         ddf = df[df[COL_USE_DATE].astype(str) == use_date].copy()
@@ -324,6 +340,7 @@ def generate_maruhachi_order_workbook(
 
         sheet_title = str(use_date)
         ws = _copy_base_sheet(wb, base_ws, sheet_title, facility_mode)
+        output_sheets.append(ws)
 
         append_items: List[Tuple[str, str, float, float]] = []
 
@@ -362,6 +379,7 @@ def generate_maruhachi_order_workbook(
                         f"{use_date}_{page}ページ目",
                         facility_mode,
                     )
+                    output_sheets.append(cur_ws)
 
                 for rr in range(APPEND_START_ROW, APPEND_START_ROW + APPEND_MAX_ROWS):
                     if pos >= len(append_items):
@@ -372,6 +390,10 @@ def generate_maruhachi_order_workbook(
                     pos += 1
 
                 page += 1
+
+    # 実際の表示順で日付を整理する。続きのシートも先頭の日付は残す。
+    for output_ws in output_sheets:
+        _suppress_repeated_use_dates(output_ws)
 
     # テンプレシートは削除せず非表示
     if TEMPLATE_SHEET_NAME_TOKUYOU in wb.sheetnames:
