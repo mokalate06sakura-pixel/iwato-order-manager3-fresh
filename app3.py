@@ -3298,7 +3298,6 @@ elif page == "⑧ 献立編集":
     import split_menu_daily as _daily_menu
     if getattr(_daily_menu, "OUTPUT_LAYOUT_REVISION", None) != "daily-menu-v6-20261117":
         _daily_menu = importlib.reload(_daily_menu)
-    cleanup_daily_sheets = _daily_menu.cleanup_daily_sheets
     list_menu_sheets = _daily_menu.list_menu_sheets
     split_menu_daily = _daily_menu.split_menu_daily
 
@@ -3313,7 +3312,7 @@ elif page == "⑧ 献立編集":
     st.caption("既存の「日別_」シートは作り直します。行数が多い日は、1ページに合わせるため印刷文字が小さくなります。")
 
     def clear_daily_menu_result():
-        for key in ("daily_menu_data", "daily_menu_fname", "daily_menu_report", "daily_cleanup_data", "daily_cleanup_count"):
+        for key in ("daily_menu_data", "daily_menu_fname", "daily_menu_report"):
             st.session_state.pop(key, None)
 
     remove_daily_iwato = st.checkbox(
@@ -3384,23 +3383,3 @@ elif page == "⑧ 献立編集":
         )
         st.caption("Excelで日別_シートを選び、印刷プレビューを確認してから印刷してください。")
 
-    with st.expander("日別シートの後片付け"):
-        st.write("「日別_」で始まるシートだけを削除したファイルを作成します。元シートの内容・画像は変更しません。")
-        if st.button("日別シートだけ削除したファイルを作成", key="daily_cleanup_run"):
-            if daily_upload is None:
-                st.warning("後片付けする献立表（xlsx）を選択してください。")
-            else:
-                try:
-                    cleanup_data, cleanup_count = cleanup_daily_sheets(daily_upload.getvalue())
-                    st.session_state["daily_cleanup_data"] = cleanup_data
-                    st.session_state["daily_cleanup_count"] = cleanup_count
-                except Exception as exc:
-                    st.session_state.pop("daily_cleanup_data", None)
-                    st.error(f"後片付けできませんでした：{exc}")
-        if "daily_cleanup_data" in st.session_state:
-            st.write(f"日別シート {st.session_state['daily_cleanup_count']}枚を削除しました。")
-            st.download_button(
-                "📥 日別シート削除後のファイル", data=st.session_state["daily_cleanup_data"],
-                file_name=Path(daily_upload.name).stem + "_日別削除.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="daily_cleanup_download",
-            )
