@@ -101,7 +101,7 @@ class AppScreensTests(unittest.TestCase):
                 path = root / "monthly.xlsx"
                 path.write_bytes(menu_fixture() if valid else b"invalid workbook")
                 app = injected_app(root, {"daily_menu_upload": path}).run()
-                app.radio(key="main_page_selector").set_value("⑧ 献立の日別印刷").run()
+                app.radio(key="main_page_selector").set_value("⑧ 献立編集").run()
                 self.assertEqual(list(app.exception), [])
                 if not valid:
                     self.assertTrue(any("読み込めません" in item.value for item in app.error))
@@ -127,10 +127,11 @@ class AppScreensTests(unittest.TestCase):
                 app.button(key="daily_menu_run").click().run()
                 self.assertTrue(app.session_state["daily_menu_report"]["remove_iwato"])
                 self.assertTrue(app.session_state["daily_menu_report"]["equalize_widths"])
-                app.checkbox(key="daily_menu_equalize_widths").uncheck().run()
-                self.assertNotIn("daily_menu_data", app.session_state)
+                self.assertNotIn("daily_menu_equalize_widths", [checkbox.key for checkbox in app.checkbox])
+                self.assertEqual(app.checkbox(key="daily_menu_remove_iwato").label, "特養用　いわと常食（A～I列）を除く")
+                app.session_state["daily_menu_equalize_widths"] = False
                 app.button(key="daily_menu_run").click().run()
-                self.assertFalse(app.session_state["daily_menu_report"]["equalize_widths"])
+                self.assertTrue(app.session_state["daily_menu_report"]["equalize_widths"])
                 app.button(key="daily_cleanup_run").click().run()
                 self.assertEqual(list(app.exception), [])
                 self.assertEqual(app.session_state["daily_cleanup_count"], 1)
@@ -149,7 +150,7 @@ class AppScreensTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 with patch("importlib.reload", wraps=importlib.reload) as reload_module:
                     app = injected_app(directory).run()
-                    app.radio(key="main_page_selector").set_value("⑧ 献立の日別印刷").run()
+                    app.radio(key="main_page_selector").set_value("⑧ 献立編集").run()
                     self.assertEqual(list(app.exception), [])
                     self.assertEqual(split_menu_daily.OUTPUT_LAYOUT_REVISION, revision)
                     app.run()

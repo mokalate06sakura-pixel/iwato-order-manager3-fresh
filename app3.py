@@ -2503,7 +2503,7 @@ with st.sidebar:
             "⑤ 北部市場発注書作成",
             "⑥ 仕入れカード作成",
             "⑦ マスタ管理",
-            "⑧ 献立の日別印刷",
+            "⑧ 献立編集",
         ],
         key="main_page_selector",
         label_visibility="collapsed",
@@ -3291,9 +3291,9 @@ elif page == "⑦ マスタ管理":
 
 
 # ============================================================
-# ⑧ 献立の日別印刷（SplitMenuDaily_A3_V4／V6）
+# ⑧ 献立編集（SplitMenuDaily_A3_V4／V6）
 # ============================================================
-elif page == "⑧ 献立の日別印刷":
+elif page == "⑧ 献立編集":
     import importlib
     import split_menu_daily as _daily_menu
     if getattr(_daily_menu, "OUTPUT_LAYOUT_REVISION", None) != "daily-menu-v6-20261117":
@@ -3304,8 +3304,8 @@ elif page == "⑧ 献立の日別印刷":
 
     st.html(
         '<div class="main-feature-card">'
-        '<div class="main-feature-title">🗓️ ⑧ 献立の日別印刷</div>'
-        '<div class="main-feature-sub">31日分までの1か月の献立をまとめて選び、日ごとに1日＝A3縦・1ページに整えます。<br>'
+        '<div class="main-feature-title">🗓️ ⑧ 献立編集</div>'
+        '<div class="main-feature-sub">献立マン/献立予定（実施）表・展開のExcelデータ1か月分を日ごとに1日＝A3縦・1ページに整えます。<br>'
         'セレクト献立の&lt;B&gt;は、該当する日の直後の別シートに分けます。</div>'
         '</div>'
     )
@@ -3317,15 +3317,10 @@ elif page == "⑧ 献立の日別印刷":
             st.session_state.pop(key, None)
 
     remove_daily_iwato = st.checkbox(
-        "いわと常食（A〜I列）を除く", value=False, key="daily_menu_remove_iwato",
+        "特養用　いわと常食（A～I列）を除く", value=False, key="daily_menu_remove_iwato",
         on_change=clear_daily_menu_result,
     )
-    equalize_daily_widths = st.checkbox(
-        "残り3区分を均等幅にしてA3の横幅に合わせる", value=True,
-        key="daily_menu_equalize_widths", disabled=not remove_daily_iwato,
-        on_change=clear_daily_menu_result,
-    )
-    st.caption("いわと常食を除くと、常食・軟菜きざみ・ブレンダー食の3区分になります。幅の調整を外すと元の列幅を使います。画面上の表は、印刷時の縮小を見込んで横に広くなります。")
+    st.caption("特養用でいわと常食を除くと、残り3区分を自動で均等幅にし、A3の横幅に合わせます。画面上の表は、印刷時の縮小を見込んで横に広くなります。")
 
     include_daily_stamps = st.checkbox(
         "承認スタンプ画像を付ける", value=False, key="daily_menu_include_stamps",
@@ -3362,7 +3357,7 @@ elif page == "⑧ 献立の日別印刷":
                     daily_data, daily_report = split_menu_daily(
                         daily_upload.getvalue(), daily_sheet, include_stamps=include_daily_stamps,
                         remove_iwato=remove_daily_iwato,
-                        equalize_widths=remove_daily_iwato and equalize_daily_widths,
+                        equalize_widths=remove_daily_iwato,
                     )
                 st.session_state["daily_menu_data"] = daily_data
                 st.session_state["daily_menu_fname"] = Path(daily_upload.name).stem + "_日別_A3縦.xlsx"
