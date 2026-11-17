@@ -110,13 +110,27 @@ class AppScreensTests(unittest.TestCase):
                 self.assertEqual(list(app.exception), [])
                 self.assertEqual(app.session_state["daily_menu_report"]["days"], 2)
                 self.assertEqual(app.session_state["daily_menu_report"]["select_days"], 1)
+                old_report = dict(app.session_state["daily_menu_report"])
+                old_report.pop("remove_iwato")
+                old_report.pop("equalize_widths")
+                app.session_state["daily_menu_report"] = old_report
                 app.run()
+                self.assertEqual(list(app.exception), [])
                 self.assertTrue(any("2日分" in item.value for item in app.success))
                 app.checkbox(key="daily_menu_include_stamps").check().run()
                 self.assertNotIn("daily_menu_data", app.session_state)
                 app.button(key="daily_menu_run").click().run()
                 self.assertTrue(app.session_state["daily_menu_report"]["include_stamps"])
                 self.assertEqual(app.session_state["daily_menu_report"]["stamp_copies"], 2)
+                app.checkbox(key="daily_menu_remove_iwato").check().run()
+                self.assertNotIn("daily_menu_data", app.session_state)
+                app.button(key="daily_menu_run").click().run()
+                self.assertTrue(app.session_state["daily_menu_report"]["remove_iwato"])
+                self.assertTrue(app.session_state["daily_menu_report"]["equalize_widths"])
+                app.checkbox(key="daily_menu_equalize_widths").uncheck().run()
+                self.assertNotIn("daily_menu_data", app.session_state)
+                app.button(key="daily_menu_run").click().run()
+                self.assertFalse(app.session_state["daily_menu_report"]["equalize_widths"])
                 app.button(key="daily_cleanup_run").click().run()
                 self.assertEqual(list(app.exception), [])
                 self.assertEqual(app.session_state["daily_cleanup_count"], 1)
@@ -124,6 +138,24 @@ class AppScreensTests(unittest.TestCase):
                 self.assertNotIn("daily_menu_data", app.session_state)
                 app.button(key="daily_menu_run").click().run()
                 self.assertTrue(any("日付行" in item.value for item in app.error))
+
+    def test_daily_menu_old_module_is_reloaded_after_layout_update(self):
+        import importlib
+        from unittest.mock import patch
+        import split_menu_daily
+        revision = split_menu_daily.OUTPUT_LAYOUT_REVISION
+        try:
+            split_menu_daily.OUTPUT_LAYOUT_REVISION = None
+            with tempfile.TemporaryDirectory() as directory:
+                with patch("importlib.reload", wraps=importlib.reload) as reload_module:
+                    app = injected_app(directory).run()
+                    app.radio(key="main_page_selector").set_value("⑧ 献立の日別印刷").run()
+                    self.assertEqual(list(app.exception), [])
+                    self.assertEqual(split_menu_daily.OUTPUT_LAYOUT_REVISION, revision)
+                    app.run()
+                    self.assertEqual(sum(c.args[0] is split_menu_daily for c in reload_module.call_args_list), 1)
+        finally:
+            split_menu_daily.OUTPUT_LAYOUT_REVISION = revision
 
     def test_registered_master_and_override_are_copied_without_modification(self):
         for override in (False, True):

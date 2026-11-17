@@ -9,7 +9,8 @@ import openpyxl
 from openpyxl.chart import BarChart, Reference
 from openpyxl.drawing.image import Image
 from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from split_menu_daily import cleanup_daily_sheets, list_menu_sheets, split_menu_daily
 
@@ -57,6 +58,55 @@ def menu_fixture():
     return output.getvalue()
 
 
+def v6_fixture():
+    book = openpyxl.load_workbook(BytesIO(menu_fixture()))
+    ws = book["月間献立"]
+    ws["A4"], ws["J4"], ws["S4"], ws["AB4"] = "いわと常食", "常食", "軟菜きざみ", "ブレンダー食"
+    for column, label in ((10, "常食主菜"), (19, "軟菜主菜"), (28, "ブレンダー主菜")):
+        ws.cell(6, column, label)
+        ws.cell(6, column + 8, 10 + column)
+        ws.merge_cells(start_row=6, start_column=column, end_row=6, end_column=column + 7)
+        ws.cell(12, column, label + "B")
+    ws["J21"] = "=SUM($AJ$21,AJ21,'別シート'!AJ21)"
+    ws["A2"].font = Font(name="游ゴシック", size=12, bold=True)
+    ws["A2"].alignment = Alignment(horizontal="left")
+    ws["J2"].border = Border(bottom=Side(style="thin"))
+    for column in range(1, 37):
+        ws.column_dimensions[get_column_letter(column)].width = 4 + column / 10
+    for row in range(1, 31):
+        ws.row_dimensions[row].height = 90
+    buffer = BytesIO()
+    book.save(buffer)
+    book.close()
+    return buffer.getvalue()
+
+
+def month_fixture():
+    fixture = openpyxl.Workbook()
+    source = fixture.active
+    source.title = "12月31日分"
+    for day in range(1, 32):
+        top = (day - 1) * 12 + 1
+        source.cell(top + 1, 1, "現場：いわと")
+        source.cell(top + 2, 1, f"年月日：2026年12月{day}日")
+        source.cell(top + 3, 1, "いわと常食")
+        source.cell(top + 3, 10, "常食")
+        source.cell(top + 4, 1, "朝食")
+        source.cell(top + 5, 10, f"主菜{day}")
+        source.cell(top + 5, 18, day)
+        source.cell(top + 6, 1, "昼食")
+        if day in (15, 31):
+            source.cell(top + 7, 10, "<B>")
+            source.cell(top + 8, 10, f"選択主菜{day}")
+            source.cell(top + 8, 18, day + 100)
+        source.cell(top + 9, 1, "夕食")
+        source.cell(top + 10, 36, day + 200)
+    data = BytesIO()
+    fixture.save(data)
+    fixture.close()
+    return data.getvalue()
+
+
 class DailyMenuTests(unittest.TestCase):
     def test_split_select_menu_and_print_layout(self):
         data = menu_fixture()
@@ -65,6 +115,7 @@ class DailyMenuTests(unittest.TestCase):
         original = openpyxl.load_workbook(BytesIO(data))
         self.assertEqual(report, {"days": 2, "select_days": 1, "stamps_removed": 1, "old_sheets_removed": 1,
                                  "stamps_kept": 0, "stamp_copies": 0, "include_stamps": False,
+                                 "remove_iwato": False, "equalize_widths": False,
                                  "sheets": ["日別_11月1日", "日別_11月1日_B", "日別_11月2日"]})
         self.assertEqual(book.sheetnames, ["月間献立", "別シート"] + report["sheets"])
         self.assertEqual(book.active.title, "日別_11月1日")
@@ -102,6 +153,82 @@ class DailyMenuTests(unittest.TestCase):
                     self.assertEqual(before.read(name), after.read(name), name)
         book.close()
         original.close()
+
+    def test_compact_layout_keeps_three_blocks_headers_and_quantities(self):
+        data = v6_fixture()
+        for equalize in (False, True):
+            for include in (False, True):
+                with self.subTest(equalize=equalize, include=include):
+                    result, report = split_menu_daily(data, "月間献立", include_stamps=include, remove_iwato=True, equalize_widths=equalize)
+                    book = openpyxl.load_workbook(BytesIO(result))
+                    source = openpyxl.load_workbook(BytesIO(data))
+                    main, alternate, second = [book[n] for n in report["sheets"]]
+                    self.assertEqual([main.cell(4, c).value for c in (1, 10, 19)], ["常食", "軟菜きざみ", "ブレンダー食"])
+                    self.assertEqual([main.cell(6, c).value for c in (1, 10, 19)], ["常食主菜", "軟菜主菜", "ブレンダー主菜"])
+                    self.assertEqual([main.cell(6, c).value for c in (9, 18, 27)], [20, 29, 38])
+                    self.assertEqual(main["A2"].value, "現場：いわと")
+                    self.assertEqual(main["A3"].value, "年月日：2026年11月1日（日）")
+                    self.assertEqual(main["A5"].value, "朝食")
+                    self.assertEqual(main["A11"].value, "夕食")
+                    self.assertEqual(copy(main["A2"].font), copy(source["月間献立"]["A2"].font))
+                    self.assertEqual(copy(main["A2"].border), copy(source["月間献立"]["J2"].border))
+                    self.assertIn("A6:H6", str(main.merged_cells))
+                    self.assertEqual(alternate["A5"].value, "昼食")
+                    self.assertEqual(alternate["A6"].value, "<B>")
+                    self.assertEqual(alternate["A7"].value, "常食主菜B")
+                    self.assertEqual(second["A6"].value, "=SUM($AA$21,AA6,'別シート'!AJ6)")
+                    for ws in (main, alternate, second):
+                        self.assertEqual(ws.max_column, 27)
+                        self.assertEqual(str(ws.print_area), f"'{ws.title}'!$A$1:$AA${ws.max_row}")
+                        self.assertEqual(ws.page_setup.orientation, "portrait")
+                        widths = [ws.column_dimensions[get_column_letter(c)].width for c in range(1, 28)]
+                        if equalize:
+                            blocks = [sum(widths[i:i+9]) for i in (0, 9, 18)]
+                            self.assertLess(max(blocks) - min(blocks), 0.04)
+                            original_ratio = source["月間献立"].column_dimensions["J"].width / source["月間献立"].column_dimensions["R"].width
+                            self.assertAlmostEqual(widths[0] / widths[8], original_ratio, places=2)
+                        else:
+                            self.assertEqual(widths, [source["月間献立"].column_dimensions[get_column_letter(c)].width for c in range(10, 37)])
+                    if equalize:
+                        self.assertGreater(main.column_dimensions["A"].width, alternate.column_dimensions["A"].width)
+                    self.assertEqual(report["stamps_removed"], 0)
+                    self.assertEqual(len(book["月間献立"]._images), 3)
+                    self.assertEqual(len(main._images), int(include))
+                    self.assertEqual(len(alternate._images), int(include))
+                    if include:
+                        self.assertEqual(main._images[0].anchor._from.row, 0)
+                        self.assertEqual(main._images[0].anchor._from.col, 26)
+                    for row in source["月間献立"]:
+                        for cell in row:
+                            self.assertEqual(book["月間献立"][cell.coordinate].value, cell.value)
+                    source.close()
+                    book.close()
+
+    def test_width_adjustment_requires_three_blocks(self):
+        with self.assertRaisesRegex(ValueError, "いわと常食"):
+            split_menu_daily(menu_fixture(), "月間献立", equalize_widths=True)
+
+    def test_full_31_day_month_with_select_menu_on_last_day(self):
+        data = BytesIO(month_fixture())
+        for compact in (False, True):
+            with self.subTest(compact=compact):
+                result, report = split_menu_daily(data.getvalue(), "12月31日分", remove_iwato=compact, equalize_widths=compact)
+                self.assertEqual((report["days"], report["select_days"]), (31, 2))
+                book = openpyxl.load_workbook(BytesIO(result))
+                self.assertEqual(len(report["sheets"]), 33)
+                self.assertEqual(report["sheets"][-2:], ["日別_12月31日", "日別_12月31日_B"])
+                total = 0
+                for day in range(1, 32):
+                    ws = book[f"日別_12月{day}日"]
+                    self.assertEqual(ws["A3"].value, f"年月日：2026年12月{day}日")
+                    total += ws.cell(6, 9 if compact else 18).value
+                    self.assertEqual((ws.page_setup.fitToWidth, ws.page_setup.fitToHeight), (1, 1))
+                    self.assertEqual(ws.page_setup.orientation, "portrait")
+                self.assertEqual(total, sum(range(1, 32)))
+                final_b = book["日別_12月31日_B"]
+                self.assertEqual(final_b.cell(7, 1 if compact else 10).value, "選択主菜31")
+                self.assertEqual(final_b.cell(7, 9 if compact else 18).value, 131)
+                book.close()
 
     def test_include_stamps_on_daily_and_b_sheets_with_rebased_position(self):
         data = menu_fixture()

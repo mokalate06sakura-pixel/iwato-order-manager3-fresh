@@ -3291,15 +3291,21 @@ elif page == "⑦ マスタ管理":
 
 
 # ============================================================
-# ⑧ 献立の日別印刷（SplitMenuDaily_A3_V4）
+# ⑧ 献立の日別印刷（SplitMenuDaily_A3_V4／V6）
 # ============================================================
 elif page == "⑧ 献立の日別印刷":
-    from split_menu_daily import cleanup_daily_sheets, list_menu_sheets, split_menu_daily
+    import importlib
+    import split_menu_daily as _daily_menu
+    if getattr(_daily_menu, "OUTPUT_LAYOUT_REVISION", None) != "daily-menu-v6-20261117":
+        _daily_menu = importlib.reload(_daily_menu)
+    cleanup_daily_sheets = _daily_menu.cleanup_daily_sheets
+    list_menu_sheets = _daily_menu.list_menu_sheets
+    split_menu_daily = _daily_menu.split_menu_daily
 
     st.html(
         '<div class="main-feature-card">'
         '<div class="main-feature-title">🗓️ ⑧ 献立の日別印刷</div>'
-        '<div class="main-feature-sub">1か月分の献立を日ごとに分け、1日＝A3縦・1ページに整えます。<br>'
+        '<div class="main-feature-sub">31日分までの1か月の献立をまとめて選び、日ごとに1日＝A3縦・1ページに整えます。<br>'
         'セレクト献立の&lt;B&gt;は、該当する日の直後の別シートに分けます。</div>'
         '</div>'
     )
@@ -3310,11 +3316,25 @@ elif page == "⑧ 献立の日別印刷":
         for key in ("daily_menu_data", "daily_menu_fname", "daily_menu_report", "daily_cleanup_data", "daily_cleanup_count"):
             st.session_state.pop(key, None)
 
+    remove_daily_iwato = st.checkbox(
+        "いわと常食（A〜I列）を除く", value=False, key="daily_menu_remove_iwato",
+        on_change=clear_daily_menu_result,
+    )
+    equalize_daily_widths = st.checkbox(
+        "残り3区分を均等幅にしてA3の横幅に合わせる", value=True,
+        key="daily_menu_equalize_widths", disabled=not remove_daily_iwato,
+        on_change=clear_daily_menu_result,
+    )
+    st.caption("いわと常食を除くと、常食・軟菜きざみ・ブレンダー食の3区分になります。幅の調整を外すと元の列幅を使います。画面上の表は、印刷時の縮小を見込んで横に広くなります。")
+
     include_daily_stamps = st.checkbox(
         "承認スタンプ画像を付ける", value=False, key="daily_menu_include_stamps",
         on_change=clear_daily_menu_result,
     )
-    st.caption("チェックあり：元の承認スタンプを日別・Bシートにも引き継ぎます。チェックなし：元シートからも承認スタンプを除去します。他の画像は元シートに残します。")
+    if remove_daily_iwato:
+        st.caption("V6設定：元シートはスタンプも含めて保持します。スタンプありでは日別・Bシートの表の右上に配置し、スタンプなしでは日別・Bシートへコピーしません。")
+    else:
+        st.caption("チェックあり：元の承認スタンプを日別・Bシートにも引き継ぎます。チェックなし：元シートからも承認スタンプを除去します。他の画像は元シートに残します。")
 
     daily_upload = st.file_uploader(
         "1か月分の献立表（xlsx）", type=["xlsx"], key="daily_menu_upload",
@@ -3339,7 +3359,11 @@ elif page == "⑧ 献立の日別印刷":
         elif daily_sheet is not None:
             try:
                 with st.spinner("日別の献立表を作成しています…"):
-                    daily_data, daily_report = split_menu_daily(daily_upload.getvalue(), daily_sheet, include_stamps=include_daily_stamps)
+                    daily_data, daily_report = split_menu_daily(
+                        daily_upload.getvalue(), daily_sheet, include_stamps=include_daily_stamps,
+                        remove_iwato=remove_daily_iwato,
+                        equalize_widths=remove_daily_iwato and equalize_daily_widths,
+                    )
                 st.session_state["daily_menu_data"] = daily_data
                 st.session_state["daily_menu_fname"] = Path(daily_upload.name).stem + "_日別_A3縦.xlsx"
                 st.session_state["daily_menu_report"] = daily_report
@@ -3351,8 +3375,12 @@ elif page == "⑧ 献立の日別印刷":
         st.success(f"日別の献立表を作成しました！（{daily_report['days']}日分／セレクト献立 {daily_report['select_days']}日）")
         if daily_report["include_stamps"]:
             st.caption(f"承認スタンプあり：元シートの{daily_report['stamps_kept']}個を保持し、日別・Bシートに計{daily_report['stamp_copies']}個を配置しました。")
+        elif daily_report.get("remove_iwato", False):
+            st.caption("日別・Bシートは承認スタンプなしで作成しました。元シートのスタンプは保持しています。")
         else:
             st.caption(f"承認スタンプなしで作成しました（元シートから{daily_report['stamps_removed']}個を除去）。")
+        if daily_report.get("remove_iwato", False):
+            st.caption("いわと常食なし（A〜AA列）／" + ("3区分を均等幅・A3幅に調整" if daily_report.get("equalize_widths", False) else "元の列幅を使用"))
         st.download_button(
             "📥 日別の献立表をダウンロード", data=st.session_state["daily_menu_data"],
             file_name=st.session_state["daily_menu_fname"],
@@ -3384,4 +3412,7 @@ elif page == "⑧ 献立の日別印刷":
         macro_path = Path(__file__).resolve().parent / "macros/SplitMenuDaily_A3_v4.bas"
         if macro_path.exists():
             st.download_button("📥 元のVBAマクロ（Excel用）", data=macro_path.read_bytes(), file_name=macro_path.name, key="daily_macro_download")
+        macro_v6_path = Path(__file__).resolve().parent / "macros/SplitMenuDaily_A3_v6.bas"
+        if macro_v6_path.exists():
+            st.download_button("📥 V6のVBAマクロ（Excel用）", data=macro_v6_path.read_bytes(), file_name=macro_v6_path.name, key="daily_macro_v6_download")
         st.caption("この画面ではExcelマクロの登録は不要です。VBA版を使う場合は、個人用マクロブックに取り込み、元の献立シートを選んで実行してください。")

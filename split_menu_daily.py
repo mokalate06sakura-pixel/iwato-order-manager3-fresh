@@ -7,7 +7,8 @@ from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from openpyxl.formula.translate import Translator
-from openpyxl.utils.cell import coordinate_from_string, column_index_from_string, range_boundaries
+from openpyxl.formula.tokenizer import Tokenizer
+from openpyxl.utils.cell import coordinate_from_string, column_index_from_string, get_column_letter, range_boundaries
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -15,6 +16,7 @@ PKG = "http://schemas.openxmlformats.org/package/2006/relationships"
 CT = "http://schemas.openxmlformats.org/package/2006/content-types"
 PREFIX = "日別_"
 MEALS = {"朝食", "昼食", "夕食"}
+OUTPUT_LAYOUT_REVISION = "daily-menu-v6-20261117"
 
 
 def _children(node, name=None):
@@ -205,7 +207,7 @@ def _find_stamps(book, source_path, source, date_rows, remove):
     return count, groups
 
 
-def _add_stamps(book, sheet_path, sheet_id, date_row, stamps):
+def _add_stamps(book, sheet_path, sheet_id, date_row, stamps, right_align=False, source=None):
     """日付見出しのスタンプだけを、日別・Bシートの見出し位置にコピーする。"""
     if not stamps:
         return 0
@@ -233,6 +235,8 @@ def _add_stamps(book, sheet_path, sheet_id, date_row, stamps):
             if position is not None:
                 row_node = _first(position, "row")
                 row_node.firstChild.data = str(max(0, int(_text(row_node)) + delta))
+        if right_align:
+            anchor = _right_aligned_stamp(book, drawing_doc, anchor, sheet_path, source, stamp_doc)
         original_rel_path = posixpath.join(posixpath.dirname(original_path), "_rels", posixpath.basename(original_path) + ".rels")
         original_rels = minidom.parseString(book.files[original_rel_path])
         for node in anchor.getElementsByTagName("*"):
@@ -283,6 +287,232 @@ def _add_stamps(book, sheet_path, sheet_id, date_row, stamps):
     override.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.drawing+xml")
     book.types.documentElement.appendChild(override)
     return len(stamps)
+
+
+def _column_specs(root, count=36):
+    props = _first(root, "sheetFormatPr")
+    default = props.getAttribute("defaultColWidth") if props is not None else ""
+    result = [{"width": default or "9.140625"} for _ in range(count)]
+    cols = _first(root, "cols")
+    if cols is not None:
+        for col in _children(cols):
+            for index in range(max(1, int(col.getAttribute("min"))), min(count, int(col.getAttribute("max"))) + 1):
+                result[index - 1].update({key: col.getAttribute(key) for key in col.attributes.keys() if key not in ("min", "max")})
+    return result
+
+
+def _digit_points(book):
+    """Normal書体の文字幅をポイントへ換算する（実献立のMS Pゴシック11で実機照合）。"""
+    styles = minidom.parseString(book.files["xl/styles.xml"])
+    font_id = 0
+    cell_styles = _first(styles.documentElement, "cellStyles")
+    style_xfs = _first(styles.documentElement, "cellStyleXfs")
+    if cell_styles is not None and style_xfs is not None:
+        normal = next((s for s in _children(cell_styles) if s.getAttribute("builtinId") == "0"), None)
+        if normal is not None:
+            xf = _children(style_xfs)[int(normal.getAttribute("xfId") or 0)]
+            font_id = int(xf.getAttribute("fontId") or 0)
+    font = _children(_first(styles.documentElement, "fonts"))[font_id]
+    size = _first(font, "sz")
+    points = 5.4 * float(size.getAttribute("val") if size is not None else 11) / 11
+    styles.unlink()
+    return points
+
+
+def _column_points(spec, digit_points):
+    return 0 if spec.get("hidden") == "1" else float(spec["width"]) * digit_points
+
+
+def _row_points(root):
+    props = _first(root, "sheetFormatPr")
+    default = float(props.getAttribute("defaultRowHeight") or 15) if props is not None else 15
+    rows = _children(_first(root, "sheetData"), "row")
+    return {int(r.getAttribute("r")): 0 if r.getAttribute("hidden") == "1" else float(r.getAttribute("ht") or default) for r in rows}, default
+
+
+def _right_aligned_stamp(book, doc, anchor, sheet_path, source, stamp_doc):
+    original = _children(stamp_doc.documentElement)[0]
+    extent = _first(original, "ext")
+    if extent is None:
+        extent = next((n for n in original.getElementsByTagName("*") if n.localName == "ext" and n.hasAttribute("cx") and n.hasAttribute("cy")), None)
+    digit = _digit_points(book)
+    if extent is not None:
+        width, height = int(extent.getAttribute("cx")), int(extent.getAttribute("cy"))
+    else:
+        widths = [_column_points(s, digit) for s in _column_specs(source.documentElement)]
+        heights, default = _row_points(source.documentElement)
+        def position(tag):
+            marker = _first(original, tag)
+            col, row = int(_text(_first(marker, "col"))), int(_text(_first(marker, "row")))
+            x = sum(widths[:col]) * 12700 + int(_text(_first(marker, "colOff")))
+            y = sum(heights.get(r, default) for r in range(1, row + 1)) * 12700 + int(_text(_first(marker, "rowOff")))
+            return x, y
+        left, top = position("from")
+        right, bottom = position("to")
+        width, height = max(1, round(right - left)), max(1, round(bottom - top))
+    worksheet = minidom.parseString(book.files[sheet_path])
+    widths = [_column_points(s, digit) for s in _column_specs(worksheet.documentElement, 27)]
+    worksheet.unlink()
+    left = max(0, sum(widths) - width / 12700)
+    column, remainder = 0, left
+    while column < 26 and remainder >= widths[column]:
+        remainder -= widths[column]
+        column += 1
+    namespace = anchor.namespaceURI
+    prefix = anchor.prefix + ":" if anchor.prefix else ""
+    def node(name, attrs=None, text=None):
+        element = doc.createElementNS(namespace, prefix + name)
+        for key, value in (attrs or {}).items():
+            element.setAttribute(key, str(value))
+        if text is not None:
+            element.appendChild(doc.createTextNode(str(text)))
+        return element
+    replacement = node("oneCellAnchor")
+    marker = node("from")
+    for name, value in (("col", column), ("colOff", round(remainder * 12700)), ("row", 0), ("rowOff", 0)):
+        marker.appendChild(node(name, text=value))
+    replacement.appendChild(marker)
+    replacement.appendChild(node("ext", {"cx": width, "cy": height}))
+    for name in ("pic", "clientData"):
+        item = _first(anchor, name)
+        if item is not None:
+            replacement.appendChild(item.cloneNode(True))
+    return replacement
+
+
+def _delete_iwato_formula(expression):
+    tokens = Tokenizer("=" + expression).items
+    pattern = re.compile(r"(\$?)([A-Z]{1,3})(\$?\d*)$")
+    for token in tokens:
+        if token.subtype != "RANGE" or "!" in token.value:
+            continue
+        parts = token.value.split(":")
+        matches = [pattern.fullmatch(part) for part in parts]
+        if not all(matches) or (len(parts) == 1 and not re.search(r"\d", parts[0])):
+            continue
+        columns = [column_index_from_string(m[2]) for m in matches]
+        if max(columns) <= 9:
+            token.value = "#REF!"
+        else:
+            token.value = ":".join(m[1] + get_column_letter(max(10, col) - 9) + m[3] for m, col in zip(matches, columns))
+    return "".join(t.value for t in tokens)
+
+
+def _restore_label_style(book, source_style, destination_style):
+    if source_style == destination_style:
+        return source_style
+    if not hasattr(book, "layout_styles"):
+        book.layout_styles = minidom.parseString(book.files["xl/styles.xml"])
+        book.label_styles = {}
+    key = source_style, destination_style
+    if key in book.label_styles:
+        return book.label_styles[key]
+    styles = book.layout_styles
+    xfs = _first(styles.documentElement, "cellXfs")
+    source, destination = _children(xfs)[source_style], _children(xfs)[destination_style]
+    xf = destination.cloneNode(True)
+    xf.setAttribute("fontId", source.getAttribute("fontId") or "0")
+    xf.setAttribute("applyFont", "1")
+    fill = _children(_first(styles.documentElement, "fills"))[int(source.getAttribute("fillId") or 0)]
+    pattern = _first(fill, "patternFill")
+    if pattern is not None and pattern.getAttribute("patternType") not in ("", "none"):
+        xf.setAttribute("fillId", source.getAttribute("fillId"))
+        xf.setAttribute("applyFill", "1")
+    src_alignment, alignment = _first(source, "alignment"), _first(xf, "alignment")
+    if alignment is None:
+        alignment = _element(styles, "alignment")
+        xf.appendChild(alignment)
+    if src_alignment is not None and src_alignment.hasAttribute("horizontal"):
+        alignment.setAttribute("horizontal", src_alignment.getAttribute("horizontal"))
+    elif alignment.hasAttribute("horizontal"):
+        alignment.removeAttribute("horizontal")
+    xf.setAttribute("applyAlignment", "1")
+    result = len(_children(xfs))
+    xfs.appendChild(xf)
+    xfs.setAttribute("count", str(result + 1))
+    book.label_styles[key] = result
+    book.files["xl/styles.xml"] = _xml(styles)
+    return result
+
+
+def _compact_layout(book, xml, equalize):
+    doc = minidom.parseString(xml)
+    root = doc.documentElement
+    rows = _children(_first(root, "sheetData"), "row")
+    for row in rows:
+        saved = None
+        for cell in _children(row, "c"):
+            column, number = coordinate_from_string(cell.getAttribute("r"))
+            index = column_index_from_string(column)
+            if index == 1:
+                text = book.cell_text(cell)
+                if text.startswith(("現場", "年月日")) or text in MEALS:
+                    saved = cell.cloneNode(True)
+            if index <= 9:
+                row.removeChild(cell)
+            else:
+                cell.setAttribute("r", f"{get_column_letter(index - 9)}{number}")
+                formula = _first(cell, "f")
+                if formula is not None:
+                    expression = _delete_iwato_formula(_text(formula))
+                    for child in list(formula.childNodes):
+                        formula.removeChild(child)
+                    formula.appendChild(doc.createTextNode(expression))
+        if saved is not None:
+            destination = next((c for c in _children(row, "c") if c.getAttribute("r") == saved.getAttribute("r")), None)
+            old_style = int(destination.getAttribute("s") or 0) if destination is not None else 0
+            saved.setAttribute("s", str(_restore_label_style(book, int(saved.getAttribute("s") or 0), old_style)))
+            if destination is not None:
+                row.replaceChild(saved, destination)
+            else:
+                row.insertBefore(saved, row.firstChild)
+        if row.hasAttribute("spans"):
+            row.setAttribute("spans", "1:27")
+    merges = _first(root, "mergeCells")
+    if merges is not None:
+        for merge in list(_children(merges)):
+            a, b, c, d = range_boundaries(merge.getAttribute("ref"))
+            if c <= 9:
+                merges.removeChild(merge)
+            else:
+                merge.setAttribute("ref", f"{get_column_letter(max(a, 10) - 9)}{b}:{get_column_letter(c - 9)}{d}")
+        merges.setAttribute("count", str(len(_children(merges))))
+    specs = _column_specs(root)[9:36]
+    if equalize:
+        margins = _first(root, "pageMargins")
+        margin = lambda name, default: float(margins.getAttribute(name) or default) if margins is not None else default
+        printable_width = 297 / 25.4 * 72 - 72 * (margin("left", 0.7) + margin("right", 0.7))
+        printable_height = 420 / 25.4 * 72 - 72 * (margin("top", 0.75) + margin("bottom", 0.75))
+        if min(printable_width, printable_height) <= 0:
+            raise ValueError("印刷余白がA3用紙より大きいため、幅を調整できません。")
+        heights, default = _row_points(root)
+        content_height = sum(heights.values())
+        target = printable_width * max(1, content_height / printable_height) / 3
+        digit = _digit_points(book)
+        for block in range(3):
+            group = specs[block * 9:(block + 1) * 9]
+            total = sum(_column_points(s, digit) for s in group)
+            if total > 0:
+                for spec in group:
+                    width = float(spec["width"]) * target / total
+                    if width > 255:
+                        raise ValueError("行数が多く、A3幅に合わせる列幅がExcelの上限を超えます。日数や行数を確認してください。")
+                    spec["width"] = str(round(width * 256) / 256)
+                    spec["customWidth"] = "1"
+    cols = _first(root, "cols")
+    if cols is None:
+        cols = _element(doc, "cols")
+        root.insertBefore(cols, _first(root, "sheetData"))
+    for child in list(cols.childNodes):
+        cols.removeChild(child)
+    for index, spec in enumerate(specs, 1):
+        cols.appendChild(_element(doc, "col", {**spec, "min": index, "max": index}))
+    dimension = _first(root, "dimension")
+    if dimension is not None:
+        dimension.setAttribute("ref", f"A1:AA{len(rows)}")
+    result = _xml(doc)
+    doc.unlink()
+    return result
 
 
 def _daily_xml(source, selected_rows, shared_formulas):
@@ -377,9 +607,11 @@ def _daily_xml(source, selected_rows, shared_formulas):
     return result
 
 
-def split_menu_daily(data, sheet_name, include_stamps=False):
+def split_menu_daily(data, sheet_name, include_stamps=False, remove_iwato=False, equalize_widths=False):
     """元シートを残し、日別A3縦1ページのブックと処理件数を返す。"""
     book = _Package(data)
+    if equalize_widths and not remove_iwato:
+        raise ValueError("3区分の幅を調整する場合は「いわと常食を除く」も選択してください。")
     source_path, source = book.source(sheet_name)
     rows = _children(_first(source.documentElement, "sheetData"), "row")
     texts = {int(row.getAttribute("r")): {coordinate_from_string(c.getAttribute("r"))[0]: book.cell_text(c) for c in _children(row, "c")} for row in rows}
@@ -425,7 +657,7 @@ def split_menu_daily(data, sheet_name, include_stamps=False):
         if formula is not None and formula.getAttribute("t") == "shared" and _text(formula):
             shared[formula.getAttribute("si")] = (cell.getAttribute("r"), _text(formula))
     removed = book.remove_daily()
-    stamps, stamp_groups = _find_stamps(book, source_path, source, [r for r, _ in dates], remove=not include_stamps)
+    stamps, stamp_groups = _find_stamps(book, source_path, source, [r for r, _ in dates], remove=not include_stamps and not remove_iwato)
     stamp_copies = 0
     first_index = len(_children(book.sheets))
     sheet_id = max(int(s.getAttribute("sheetId")) for s in _children(book.sheets))
@@ -456,12 +688,16 @@ def split_menu_daily(data, sheet_name, include_stamps=False):
         override.setAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")
         book.types.documentElement.appendChild(override)
         area = _element(book.workbook, "definedName", {"name": "_xlnm.Print_Area", "localSheetId": first_index + offset})
-        area.appendChild(book.workbook.createTextNode(f"'{name}'!$A$1:$AJ${len(selected_rows)}"))
+        print_end = "AA" if remove_iwato else "AJ"
+        area.appendChild(book.workbook.createTextNode(f"'{name}'!$A$1:${print_end}${len(selected_rows)}"))
         names.appendChild(area)
         book.files[path] = _daily_xml(source, selected_rows, shared)
+        if remove_iwato:
+            book.files[path] = _compact_layout(book, book.files[path], equalize_widths)
         if include_stamps:
-            stamp_copies += _add_stamps(book, path, sheet_id, plan_dates[name], stamp_groups[plan_dates[name]])
-    return book.finish(first_index), {"days": len(dates), "select_days": b_count, "stamps_removed": 0 if include_stamps else stamps, "stamps_kept": stamps if include_stamps else 0, "stamp_copies": stamp_copies, "include_stamps": bool(include_stamps), "old_sheets_removed": removed, "sheets": [name for name, _ in plans]}
+            selected_stamps = stamp_groups[plan_dates[name]][:1] if remove_iwato else stamp_groups[plan_dates[name]]
+            stamp_copies += _add_stamps(book, path, sheet_id, plan_dates[name], selected_stamps, right_align=remove_iwato, source=source)
+    return book.finish(first_index), {"days": len(dates), "select_days": b_count, "stamps_removed": stamps if not include_stamps and not remove_iwato else 0, "stamps_kept": stamps if include_stamps or remove_iwato else 0, "stamp_copies": stamp_copies, "include_stamps": bool(include_stamps), "remove_iwato": bool(remove_iwato), "equalize_widths": bool(equalize_widths), "old_sheets_removed": removed, "sheets": [name for name, _ in plans]}
 
 
 def cleanup_daily_sheets(data):
